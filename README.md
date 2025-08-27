@@ -13,7 +13,7 @@ podman-compose --env-file .env up
 - I'm not using podman secrets, nor am I exporting anything prior to issuing this command. 
 - I've tested with the official oracle db/latest (as of ~July 2025); not Gerald's. So, I'm not sure what his entrypoint.sh script looks like. the `test_database` function could probably be added to his file though. Untested, not sure at all though!!
 
-## Weblogic
+## Weblogic Overview
 
 - Having tested the Remote Console, it doesn't the user with a lot of actionable insight. In a final (i.e., "I'm going to give up after this, after 3 days of diagnosing...") attempt I explicilty set the `PRODUCTION_MODE=dev` and in the Provider Information for the Remote Console (for establishing a connection to the Admin Server), I used the following values[^1]: 
 
@@ -31,7 +31,11 @@ podman-compose --env-file .env up
     
     The `./` is a shortcut for pointing to the `podman-dev` directory. That way, if you decide to rename that directory, it will simply refer to `./` instead of the name (which may have changed, which will result in a failed deployment).
 
+## ORDS
+
 ### Updating the ORDS configuration
+
+#### ORDS .war file contents
 
 The `ords.war` contains the following:
 
@@ -283,7 +287,8 @@ For the purposes of WebLogic, all we care about are the `beans.xml`, `web.xml`, 
 
 [^2]: [Details](https://docs.oracle.com/en/middleware/fusion-middleware/weblogic-server/14.1.2/depgd/understanding.html#GUID-904A48A6-D89A-446D-A8E9-EDE4B44140DB) on the files contained in a `.war` file.
 
-<a id="original_web_xml"></a>
+#### The web.xml file
+
 An unmodified version of ORDS will contain a `web.xml` file such as this:
 
 ```xml
@@ -346,13 +351,18 @@ An unmodified version of ORDS will contain a `web.xml` file such as this:
 </web-app>
 ```
 
+#### Defining an ORDS configuration directory
+
+##### About
+
 You must define the location of the ORDS configuration directory by either:
 1. manually adding it as `<context-param>` to this `web.xml` file and re-archiving the exploded archive into a new `ords.war` file (HIGHLY DISCOURAGED)
 2. using the `ords war` command 
 2. Set the `config.url` system property (i.e., the system where Weblogic is deployed, and prior to starting the WebLogic Server) with this command: `export JAVA_OPTIONS="-Dconfig.url=/path/to/ords_config"` 
 
 
-The "ORDS Web Application" doesn't require/use/rely on
+##### Steps to generate new <code>ords.war</code> file
+<!-- The "ORDS Web Application" doesn't require/use/rely on -->
 
 1. Copy the ords product folder to your WebLogic server
 2. Create an empty ORDS configuration folder (e.g. `ords_config`)[^4]
@@ -389,14 +399,44 @@ The "ORDS Web Application" doesn't require/use/rely on
     ```shell
     jar -xf my_new_war_for_wls.war
     ```
+*** UPDATE WITH THE FOLLOWING ***
 
-7. Issue the `ls` command and you should see two objects: 
+```txt
+Install Ords and make sure APEX is already installed
+Run below commands as pre-requisite for APEX and DbAction area
+./ords_files/bin/ords --config `pwd`/config config user add ords_user_auth_code 'auth.code.role'
+./ords_files/bin/ords --config `pwd`/config config user add ords_user_implicit 'implicit.role'
+./ords_files/bin/ords --config `pwd`/config config set --global feature.sdw.selfServiceSchema true
+./ords_files/bin/ords --config `pwd`/config config set security.verifySSL false
+Generate new war file having information about config directory using war command
+./ords_files/bin/ords --config `pwd`/config war `pwd`/ords.war
+Create a directory WEB-INF with the following files:
+web.xml Expand source
+
+weblogic.xml Expand source
+Create i.war file using following command
+jar cMf i.war WEB-INF/web.xml WEB-INF/weblogic.xml
+Go to weblogic_install_directory/user_projects/domains/base_domain and start weblogic server by executing ./startWebLogic.sh
+Go to location where Weblogic Remote console files are unzipped.
+Launch the WebLogic Remote Console by using ./weblogic-remote-console and login
+Go to Edit Tree Option of WebLogic Remote Console Home Page.
+a. Deployement ->name ords ->choose ords.war->click on create-> click on cart icon and commit changes.
+b. Repeat above steps for i.war
+c. Go to monitoring tree-> deployment-> app management-> start both ords.war and i.war
+d. Go to monitoring tree-> deployment->deployement task and monitor deployment
+Check localhost:7002/ords/_/landing to check ords landing page
+```
+*** UPDATE WITH THE FOLLOWING ***
+
+##### Review new <code>ords.war</code> file
+
+1. Issue the `ls` command and you should see two objects: 
    - the new `.war` file, and 
    - a `WEB-INF` directory
    
    `cd` into the `WEB-INF` directory. A `web.xml` file will be visible. You can `cat` the file to review its contents. 
 
-8. After issuing the `cat web.xml` command, you'll see something resembling the following sample `web.xml`:
+2. After issuing the `cat web.xml` command, you'll see something resembling the following sample `web.xml`:
 
     ```xml=
     <?xml version="1.0" encoding="UTF-8" standalone="no"?><web-app xmlns="http://xmlns.jcp.org/xml/ns/javaee" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" id="ORDS" metadata-complete="true" version="3.1" xsi:schemaLocation="http://xmlns.jcp.org/xml/ns/javaee http://xmlns.jcp.org/xml/ns/javaee/web-app_3_1.xsd">
@@ -404,10 +444,10 @@ The "ORDS Web Application" doesn't require/use/rely on
 
         <context-param>
             <param-name>config.url</param-name>
-            <param-value>/Users/choina/temp_config</param-value>
+            <param-value>/path/to/ords_config</param-value>
         </context-param><context-param>
             <param-name>version</param-name>
-            <param-value>25.2.0.r1651520</param-value>
+            <param-value>XX.X.X.r1234567</param-value>
         </context-param>
         
         <listener>
@@ -454,7 +494,33 @@ The "ORDS Web Application" doesn't require/use/rely on
     </web-app>
     ```
 
-9. Compare this to the [original `web.xml`](#original-web-xml) file
+3. Compare this to the [original `web.xml`](#the-webxml-file) file. You'll notice the following updates to the `<context-param>` element[^5]:
+ 
+   ```xml
+   <context-param>
+            <param-name>config.url</param-name>
+            <param-value>/path/to/ords_config</param-value>
+        </context-param><context-param>
+            <param-name>version</param-name>
+            <param-value>XX.X.X.r1234567</param-value>
+        </context-param>
+   ```
+
+
+[^5]: Learn more about the [Web.xml Deployment Descriptor elements](https://docs.oracle.com/en/middleware/fusion-middleware/weblogic-server/14.1.2/wbapp/web_xml.html).
+
+4. Your new `ords.war` file is ready for deploying to Weblogic Server.
+
+## Weblogic Remote Server
+
+Beginning with Weblogic Server version 14.1.2, the Weblogic Administration Console has been deprecated. To access your Administrative console, you must use the REST/Electron-based Remote Console.
+
+### Deploying ORDS 
+
+
+
+
+
 
 
 

@@ -5,7 +5,8 @@ services:
       - ORACLE_PDB=${ORACLE_PDB}
       - ORACLE_PWD=${ORACLE_PWD}
     volumes:
-      - db_23:/opt/oracle/oradata/
+      - db_23:/opt/oracle/oradata/ # volume used for WLS testing, no REST-enabled users in it as of 8/20/2025
+      # - db_wls:/opt/oracle/oradata/ # Used for the freesql lab
     ports:
       - "1521:1521"
     networks:
@@ -36,32 +37,34 @@ services:
     networks:
       - appnet
 
-  wls:
-    image: container-registry.oracle.com/middleware/weblogic:14.1.2.0-generic-jdk17-ol8-250424
-    environment:
-      - PRODUCTION_MODE=dev
-      # These are the default configuration settings, no need to explicitly set:
-      #   * `ADMIN_NAME`                  (default: `AdminServer`)
-      #   * `ADMIN_LISTEN_PORT`           (default: `7001`)
-      #   * `DOMAIN_NAME`                 (default: `base_domain`)
-      #   * 'PRODUCTION_MODE              (default: `dev`)
-      #   * `ADMINISTRATION_PORT_ENABLED` (default: `false`)
-      #   * `ADMINISTRATION_PORT`         (default: `9002`)
-    entrypoint: ["/bin/sh", "-c", "sleep 60 && /u01/oracle/createAndStartEmptyDomain.sh"]
-    volumes:
-      - ./:/u01/oracle/properties
-    ports:
-      - "7001:7001"
-      - "9002:9002"
-    depends_on:
-      ords-node:
-        condition: service_healthy
-    networks:
-      - appnet
+  # wls:
+  #   image: container-registry.oracle.com/middleware/weblogic:14.1.2.0-generic-jdk17-ol8-250424
+  #   environment:
+  #     - PRODUCTION_MODE=dev
+  #     # These are the default configuration settings, no need to explicitly set:
+  #     #   * `ADMIN_NAME`                  (default: `AdminServer`)
+  #     #   * `ADMIN_LISTEN_PORT`           (default: `7001`)
+  #     #   * `DOMAIN_NAME`                 (default: `base_domain`)
+  #     #   * 'PRODUCTION_MODE              (default: `dev`)
+  #     #   * `ADMINISTRATION_PORT_ENABLED` (default: `false`)
+  #     #   * `ADMINISTRATION_PORT`         (default: `9002`)
+  #   entrypoint: ["/bin/sh", "-c", "sleep 60 && /u01/oracle/createAndStartEmptyDomain.sh"]
+  #   volumes:
+  #     - ./:/u01/oracle/properties
+  #   ports:
+  #     - "7001:7001"
+  #     - "9002:9002"
+  #   depends_on:
+  #     ords-node:
+  #       condition: service_healthy
+  #   networks:
+  #     - appnet
 
 volumes:
   ords_config:
-  db_23:
+  db_23: # Used for the freesql lab
+  # db_wls: # volume used for WLS testing, no REST-enabled users in it as of 8/20/2025 
+  # Used for the freesql lab
 
 networks:
   appnet:
