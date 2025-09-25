@@ -22,7 +22,7 @@ services:
       - ORACLE_PWD=${ORACLE_PWD}
     volumes:
       - ords_config:/etc/ords/config
-      - ./entrypoint.sh:/entrypoint.sh:ro
+      - ./scripts/entrypoint.sh:/entrypoint.sh:ro
     entrypoint: ["/bin/bash", "/entrypoint.sh"]
     ports:
       - "8080:8080"
@@ -39,6 +39,7 @@ services:
 
   # wls:
   #   image: container-registry.oracle.com/middleware/weblogic:14.1.2.0-generic-jdk17-ol8-250424
+  #   hostname: wls # testing this, because of the error encountered when restarting wls, see footnote below.
   #   environment:
   #     - PRODUCTION_MODE=dev
   #     # These are the default configuration settings, no need to explicitly set:
@@ -50,7 +51,10 @@ services:
   #     #   * `ADMINISTRATION_PORT`         (default: `9002`)
   #   entrypoint: ["/bin/sh", "-c", "sleep 60 && /u01/oracle/createAndStartEmptyDomain.sh"]
   #   volumes:
-  #     - ./:/u01/oracle/properties
+  #     - ./weblogic/:/u01/oracle/properties
+  #     - ./scripts/wls-wait.sh:/u01/oracle/wls-wait.sh:ro
+  #     - wls_domains:/u01/oracle/user_projects/domains 
+  #     - wls_apps:/u01/oracle/apps 
   #   ports:
   #     - "7001:7001"
   #     - "9002:9002"
@@ -59,13 +63,32 @@ services:
   #       condition: service_healthy
   #   networks:
   #     - appnet
+  #   healthcheck:
+  #     test: |
+  #       bash -c '
+  #         # Check ORDS
+  #         curl --fail --silent http://ords-node:8080/ords/ || exit 1
+  #         # Check WebLogic console
+  #         curl --fail --silent http://localhost:7001/console || exit 1
+  #       '
+  #     interval: 30s
+  #     timeout: 10s
+  #     retries: 20
 
 volumes:
   ords_config:
   db_23: # Used for the freesql lab
   # db_wls: # volume used for WLS testing, no REST-enabled users in it as of 8/20/2025 
   # Used for the freesql lab
+  # wls_domains:  # <-- DOMAIN_HOME (AdminServer + config)
+  # wls_apps: # <-- Deployed WARs/EARs (if nostage)
 
 networks:
   appnet:
     driver: bridge
+
+
+# Experienced once, after restarting the wls server:
+# The domain is experiencing REST communication issues between servers. 
+# javax.net.ssl.SSLKeyException: Hostname verification failed: HostnameVerifier=weblogic.security.utils.SSLWLSHostnameVerifier, hostname=cfb42f88a930. 
+# A restart of the administration server may resolve communication errors.
