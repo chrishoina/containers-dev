@@ -1,3 +1,4 @@
 .env
 /weblogic
 *.properties
+ords.war
