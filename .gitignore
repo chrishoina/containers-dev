@@ -2,3 +2,5 @@
 /weblogic
 *.properties
 ords.war
+.war
+.war_master
