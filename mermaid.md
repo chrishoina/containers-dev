@@ -1,3 +1,4 @@
+```mermaid
 erDiagram
     CAR {
       NUMBER CAR_ID PK
@@ -90,3 +91,4 @@ erDiagram
       NUMBER YEAR_OF_MANUFACTURE
       NUMBER VEHICLE_COUNT
     }
+```
