@@ -19,7 +19,11 @@ services:
       - ORACLE_PWD=${ORACLE_PWD}
       # - APEX_PWD=${ORACLE_PWD} # You can specify a password, otherwise we will generate one for you.
     volumes:
-      - ./apex-latest/apex:/opt/oracle/apex # This mapping is what triggers the APEX installation. We'll update the README to make this more clear.
+      - ./apex-latest/apex:/opt/oracle/apex   # This mapping is what triggers the APEX installation. We'll update the README to make this more clear.
+                                              # I've downloaded the latest APEX build in a directory called apex-latest, inside is 
+                                              # another directory called /apex/
+                                              # The Entrypoint.sh looks for this mapped volume and then if present, kicks off the
+                                              # APEX install.
     ports:
       - "8080:8080"
     healthcheck:
