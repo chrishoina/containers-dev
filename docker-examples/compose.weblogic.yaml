@@ -1,0 +1,55 @@
+services:
+  wls:
+    image: container-registry.oracle.com/middleware/weblogic:14.1.2.0-generic-jdk21-ol9 
+    hostname: wls
+    environment:
+      - PRODUCTION_MODE=dev # I do not believe this is necessary, since dev is the default. I leave it intact anyways.
+
+      # Here are the complete, modifiable parameters (as indicated in the WLS GitHub repo):
+      # 
+      # `ADMIN_NAME`                  (default: `AdminServer`)
+      # `ADMIN_LISTEN_PORT`           (default: `7001`)
+      # `DOMAIN_NAME`                 (default: `base_domain`)
+      # 'PRODUCTION_MODE              (default: `dev`)
+      # `ADMINISTRATION_PORT_ENABLED` (default: `false`)
+      # `ADMINISTRATION_PORT`         (default: `9002`)
+
+    entrypoint: ["/u01/oracle/wls-wait.sh", "/u01/oracle/createAndStartEmptyDomain.sh"] 
+    volumes:
+      - ./weblogic:/u01/oracle/properties                 # A local directory used for persisting/storing the domain.properties file.
+
+      - ./scripts/wls-wait.sh:/u01/oracle/wls-wait.sh:ro  # A script that checks for database readiness.
+                                                          # I haven't tested without this script; it
+                                                          # may not even be necessary.
+
+      - wls:/u01/oracle/user_projects/domains             # Volume is used to persist the ords.war file. After
+                                                          # uploading to the Remote Web Console, that ords.war file 
+                                                          # is located at: 
+                                                          #
+                                                          #     
+                                                          #
+                                                          # I've noticed, on subsequent deployments, that if you omit this volume, but keep 
+                                                          # the ords_config volume, the WLS Server will fail. The container will end up in an "unhealthy" state.
+                                                          # I am unsure what is persisting though, since keeping the ords_war volume shouldn't 
+                                                          # impact anything else (thus allowing the WLS Server to start). 
+
+    ports:
+      - "7001:7001"
+      - "9002:9002"
+    networks:
+      - appnet
+    healthcheck:
+      test: |
+        bash -c 'curl --fail --silent http://localhost:7001/console || exit 1'
+      interval: 30s
+      timeout: 10s
+      retries: 20
+
+  volumes:
+    wls:          # This volume is used to persist the Weblogic domain. 
+                  # Also, if after adding the ords.war file and this isn't mounted, 
+                  # the WLS deployment will fail. 
+
+    networks:
+      appnet:
+        driver: bridge

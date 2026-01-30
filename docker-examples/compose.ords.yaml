@@ -1,0 +1,66 @@
+services: 
+  ords-node: # Note on this section, you can comment this out after you've successfully run ORDS
+             # in Standalone mode for that first time. You only need to do this to have 
+             # a complete ords_config directory; which is required for Weblogic. HOWEVER...
+             # ...you will need to:
+             #
+             #      podman exec -it [ords container name] /bin/bash
+             #
+             # into the container to modify the security.verifySSL configuration setting to false.
+             # Use the following command:
+             #
+             #      ords config set security.verifySSL false 
+             #
+             # You will need to do something similar in Weblogic too, otherwise requests to ORDS will be
+             # blocked (due to an http/https conflict).
+
+    image: container-registry.oracle.com/database/ords:latest
+      # platform: linux/arm64
+    environment:
+      # - JAVA_TOOL_OPTIONS=-javaagent:./opentelemetry-javaagent.jar'
+      # - OTEL_SERVICE_NAME=ords
+      # - OTEL_METRICS_EXPORTER=none
+      # - OTEL_TRACES_EXPORTER=otlp
+      # - OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector-host:4317
+
+      - DBSERVICENAME=${ORACLE_PDB}
+      - DBHOST=db23
+      - DBPORT=${DBPORT}
+      - ORDS_PUBLIC_USER_PWD=${ORACLE_PWD}
+      - ORACLE_PWD=${ORACLE_PWD}
+      # - JDK_JAVA_OPTIONS=-Xlog:all=error:stdout
+
+    volumes:
+      - ords_config:/etc/ords/config # Only use with db23 volume
+    ports:
+      - "8080:8080"
+
+    networks:
+      - appnet
+
+    healthcheck:
+      test: curl --noproxy "localhost" -f -k http://localhost:8080/ords/ || exit 1
+      interval: 30s
+      timeout: 10s
+      retries: 150
+    depends_on:     # I don't even think this section works as expected in Podman, like it does in Docker. 
+                  # But, we've made significant updates to the ORDS entrypoint.sh file such
+                  # that it is more intelligent (??) about how if seeks to verify if the target
+                  # database is in a "ready" state.
+      db23:
+        condition: service_healthy 
+
+  db23:
+    extends:
+      file: ./compose.yaml
+      service: db23
+    volumes:
+      - db_23:/opt/oracle/oradata/      # Volume used to persist database data
+
+volumes:
+  ords_config:         # Oracle DB data persistence
+  db_23: # To be used only for this configuration
+
+networks:
+  appnet: 
+    driver: bridge

@@ -1,0 +1,330 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>QBE Dynamic Form Builder</title>
+<style>
+  body { font-family: Arial, sans-serif; margin: 20px; }
+  label, input, select { margin-bottom: 10px; display: block; }
+  .result { margin-top: 20px; }
+  .error { color: red; }
+  pre { background: #f4f4f4; padding: 6px; }
+  .example-box { background: #e9f7ef; padding: 8px 10px; border-left: 4px solid #52c28a; margin-bottom: 16px;}
+  .qbe-row { margin-bottom: 14px; }
+</style>
+</head>
+<body>
+<h2>API QBE Generator</h2>
+<form id="endpoint-form">
+  <label for="api-endpoint">API Endpoint:</label>
+  <input type="text" id="api-endpoint" required size="80"
+         placeholder="e.g. http://localhost:8080/ords/ordstest/v_art_nc_4721/">
+  <label for="api-username">Username (optional):</label>
+  <input type="text" id="api-username" autocomplete="username">
+  <label for="api-password">Password (optional):</label>
+  <input type="password" id="api-password" autocomplete="current-password">
+  <button type="submit">Fetch Metadata</button>
+</form>
+<div id="qbe-form-container"></div>
+<div class="result" id="result"></div>
+
+
+<script>
+const endpointForm = document.getElementById('endpoint-form');
+const qbeFormContainer = document.getElementById('qbe-form-container');
+const resultDiv = document.getElementById('result');
+
+// QBE rules for supported operators by field type
+const QBE_RULES = {
+  string: [
+    { label: "Equals", key: "$eq" },
+    { label: "Not Equals", key: "$ne" },
+    { label: "Contains", key: "$instr" },
+    { label: "Not Contains", key: "$ninstr" },
+    { label: "Like", key: "$like" },
+    { label: "Between", key: "$between" },
+    { label: "NULL", key: "$null" },
+    { label: "NOT NULL", key: "$notnull" }
+  ],
+  number: [
+    { label: "Equals", key: "$eq" },
+    { label: "Not Equals", key: "$ne" },
+    { label: "Less Than", key: "$lt" },
+    { label: "Less Than or Equal", key: "$lte" },
+    { label: "Greater Than", key: "$gt" },
+    { label: "Greater Than or Equal", key: "$gte" },
+    { label: "Between", key: "$between" },
+    { label: "NULL", key: "$null" },
+    { label: "NOT NULL", key: "$notnull" }
+  ],
+  date: [
+    { label: "Equals", key: "$eq" },
+    { label: "Not Equals", key: "$ne" },
+    { label: "Less Than", key: "$lt" },
+    { label: "Less Than or Equal", key: "$lte" },
+    { label: "Greater Than", key: "$gt" },
+    { label: "Greater Than or Equal", key: "$gte" },
+    { label: "Between", key: "$between" },
+    { label: "NULL", key: "$null" },
+    { label: "NOT NULL", key: "$notnull" }
+  ]
+};
+
+// helpers
+function showError(container, msg, detail) {
+  container.innerHTML = `<div class="error"><b>Error:</b> ${msg}</div>`;
+  if (detail) {
+    const detailText = (typeof detail === 'object') ? JSON.stringify(detail, null, 2) : detail;
+    container.innerHTML += `<pre>${detailText}</pre>`;
+  }
+}
+function getAuthHeaders(username, password) {
+  if (username && password) {
+    const token = btoa(`${username}:${password}`);
+    return { 'Authorization': `Basic ${token}` };
+  }
+  return {};
+}
+
+// Render the QBE input controls for a field
+function createQBEInput(fieldName, fieldType, exampleValue) {
+  const operators = QBE_RULES[fieldType?.toLowerCase()] || QBE_RULES.string;
+  const wrapper = document.createElement('div');
+  wrapper.className = "qbe-row";
+  const label = document.createElement('label');
+  label.textContent = fieldName + ': ';
+
+  const operatorSelect = document.createElement('select');
+  operatorSelect.name = `${fieldName}_operator`;
+  operators.forEach(op => {
+    const option = document.createElement('option');
+    option.value = op.key;
+    option.textContent = op.label;
+    operatorSelect.appendChild(option);
+  });
+
+  // Based on operator, enable/disable value input (e.g., $null doesn't need value)
+  const valueInput = document.createElement('input');
+  valueInput.type = (fieldType === 'number') ? 'number' : 'text';
+  valueInput.name = `${fieldName}_value`;
+  valueInput.placeholder = fieldType + (exampleValue ? ` e.g. ${exampleValue}` : '');
+  valueInput.style.display = ""; // always show unless operator disables
+
+  operatorSelect.addEventListener('change', () => {
+    const op = operatorSelect.value;
+    if(op === "$null" || op === "$notnull") {
+      valueInput.style.display = "none";  // Hide for no-value ops
+      valueInput.value = "";
+    } else if(op === "$between") {
+      valueInput.placeholder = fieldType + " lower,upper (comma separated)";
+      valueInput.style.display = "";
+    } else {
+      valueInput.placeholder = fieldType + (exampleValue ? ` e.g. ${exampleValue}` : '');
+      valueInput.style.display = "";
+    }
+  });
+
+  label.appendChild(operatorSelect);
+  label.appendChild(valueInput);
+  wrapper.appendChild(label);
+  return wrapper;
+}
+
+// Main submission and QBE dynamic build
+endpointForm.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  qbeFormContainer.innerHTML = '';
+  resultDiv.textContent = '';
+
+  const endpoint = document.getElementById('api-endpoint').value.trim();
+  const username = document.getElementById('api-username').value;
+  const password = document.getElementById('api-password').value;
+  const baseHeaders = getAuthHeaders(username, password);
+
+  if (!endpoint) {
+    showError(qbeFormContainer, "Endpoint cannot be empty.");
+    return;
+  }
+
+  try {
+    resultDiv.textContent = "Requesting " + endpoint;
+    const response = await fetch(endpoint, {
+      credentials: "include",
+      headers: baseHeaders
+    });
+    if (!response.ok) {
+      let errDetail = await response.text();
+      showError(qbeFormContainer,
+        `Unable to fetch endpoint (${response.status})`,
+        errDetail
+      );
+      return;
+    }
+    const data = await response.json();
+
+    // Show an example record if available
+    let exampleRow = null;
+    if (data.items && Array.isArray(data.items) && data.items.length > 0) {
+      exampleRow = data.items[0];
+    }
+
+    // Find describedby for metadata
+    const describedBy = data.links?.find(l => l.rel === 'describedby');
+    if (!describedBy) {
+      showError(qbeFormContainer, 'No "describedby" link found in API response.', data.links);
+      return;
+    }
+
+    // Fetch the metadata
+    try {
+      resultDiv.textContent = "Requesting metadata from " + describedBy.href;
+      const metaRes = await fetch(describedBy.href, {
+        credentials: "include",
+        headers: baseHeaders
+      });
+      if (!metaRes.ok) {
+        let errDetail = await metaRes.text();
+        showError(qbeFormContainer,
+          `Unable to fetch describedby metadata (${metaRes.status})`,
+          errDetail
+        );
+        return;
+      }
+      const meta = await metaRes.json();
+
+      // Build the QBE form
+      const wrapper = document.createElement('div');
+      if (exampleRow) {
+        const exampleBox = document.createElement('div');
+        exampleBox.className = 'example-box';
+        exampleBox.innerHTML = `<b>Example record for reference:</b><br><pre>${JSON.stringify(exampleRow, null, 2)}</pre>`;
+        wrapper.appendChild(exampleBox);
+      }
+
+      const form = document.createElement('form');
+      form.id = "qbe-form";
+      form.innerHTML = '<h3>Query By Example</h3>';
+
+      // Dynamic fields with operator selection
+      if (Array.isArray(meta.members)) {
+        meta.members.forEach(member => {
+          const exampleValue = exampleRow ? exampleRow[member.name] : '';
+          const qbeInput = createQBEInput(member.name, member.type, exampleValue);
+          form.appendChild(qbeInput);
+        });
+      } else {
+        showError(qbeFormContainer, 'Metadata "members" missing or invalid.', meta);
+        return;
+      }
+
+      const submitBtn = document.createElement('button');
+      submitBtn.type = 'submit';
+      submitBtn.textContent = 'Query';
+      form.appendChild(submitBtn);
+
+      form.addEventListener('submit', async (ev) => {
+        ev.preventDefault();
+        resultDiv.textContent = '';
+
+        // Build FilterObject per ORDS syntax
+        const fields = [];
+        Array.from(form.elements).forEach(el => {
+          if (el.name && el.name.endsWith('_operator')) {
+            const field = el.name.replace(/_operator$/, '');
+            const operator = el.value;
+            const valueEl = form.elements[`${field}_value`];
+
+            // If no value field found, skip
+            if (!valueEl) return;
+
+            let valueRaw = valueEl.value;
+            if((!valueRaw || valueRaw.trim()==="") && (operator !== "$null" && operator !== "$notnull")) return;
+
+            let value;
+            if (operator === "$between") {
+              // Split on comma, trim, handle numbers or keep as strings, date detection could be added!
+              value = valueRaw.split(',').map(v => v.trim());
+              // Try to cast numbers if original type is number
+              if (meta.members.find(m => m.name === field)?.type === "NUMBER") {
+                value = value.map(v => v === "" ? null : Number(v));
+              }
+              else if (meta.members.find(m => m.name === field)?.type === "DATE") {
+                // convert to ORDS date expression
+                value = value.map(v =>
+                  v === "" ? null : { "$date": v }
+                );
+              }
+            } else if (operator === "$null" || operator === "$notnull") {
+              value = null;
+            } else if (meta.members.find(m => m.name === field)?.type === "NUMBER") {
+              value = Number(valueRaw);
+            } else if (meta.members.find(m => m.name === field)?.type === "DATE") {
+              value = { "$date": valueRaw };
+            } else {
+              value = valueRaw;
+            }
+            
+            let filterProp = {};
+            if (operator === "$eq") {
+              // Support implicit for simple equality (ORDS allows {field: value} for simple)
+              filterProp[field] = value;
+            } else {
+              filterProp[field] = {};
+              filterProp[field][operator] = value;
+            }
+            fields.push(filterProp);
+          }
+        });
+
+        // Compose as a single FilterObject (supports $and if multiple fields)
+        let filterObj;
+        if (fields.length === 0) {
+          resultDiv.innerHTML = `<b>Nothing selected to query.</b>`;
+          return;
+        } else if (fields.length === 1) {
+          filterObj = fields[0];
+        } else {
+          filterObj = { "$and": fields };
+        }
+        // Display what will be submitted
+        resultDiv.innerHTML = `<b>FilterObject:</b><pre>${JSON.stringify(filterObj, null, 2)}</pre>`;
+
+        // POST to the endpoint as per ORDS docs (or switch to GET with "q" param if you want)
+        try {
+          const queryRes = await fetch(endpoint, {
+            method: "POST",
+            headers: {
+              'Content-Type': 'application/json',
+              ...baseHeaders
+            },
+            body: JSON.stringify(filterObj),
+            credentials: "include"
+          });
+          if (!queryRes.ok) {
+            let errDetail = await queryRes.text();
+            resultDiv.innerHTML += `<br><span class="error"><b>Error:</b> Query failed (${queryRes.status})</span>`;
+            resultDiv.innerHTML += `<pre>${errDetail}</pre>`;
+            return;
+          }
+          const queryData = await queryRes.json();
+          resultDiv.innerHTML += '<br><b>Results:</b><pre>' + JSON.stringify(queryData, null, 2) + '</pre>';
+        } catch (err) {
+          resultDiv.innerHTML += `<br><span class="error"><b>Error:</b> ${err.message}</span>`;
+        }
+      });
+
+      wrapper.appendChild(form);
+      qbeFormContainer.innerHTML = ""; // clear pre-existing
+      qbeFormContainer.appendChild(wrapper);
+
+    } catch (metaErr) {
+      showError(qbeFormContainer, 'Exception fetching describedby metadata.', metaErr);
+      return;
+    }
+  } catch (err) {
+    showError(qbeFormContainer, 'Exception fetching endpoint.', err);
+  }
+});
+</script>
+</body>
+</html>

@@ -1,0 +1,93 @@
+#!/bin/bash
+
+# Notes:
+# File permissions: chmod +x query_generator.sh
+# Usage: ./query_generator.sh
+
+
+# --- CONFIGURATION ---
+SQLCL_PATH="/opt/homebrew/Caskroom/sqlcl/25.3.2.317.1117/sqlcl/bin/sql -s"
+DB_CONNECT_STRING="sys/Password12345@//localhost:1521/FREEPDB1 as sysdba"
+
+# --- PART 1: FETCH CURRENT VALUES ---
+echo "====================================================="
+echo "STEP 1: CURRENT DATABASE AUDIT & AWR INFO"
+echo "====================================================="
+
+echo "Unique CLIENT_PROGRAM_NAME values:"
+$SQLCL_PATH "$DB_CONNECT_STRING" <<EOF | awk 'NF' | sed 's/^[[:space:]]*//; s/[[:space:]]*$//'
+SET PAGESIZE 0 FEEDBACK OFF VERIFY OFF HEADING OFF ECHO OFF
+SELECT DISTINCT CLIENT_PROGRAM_NAME
+FROM UNIFIED_AUDIT_TRAIL
+WHERE UNIFIED_AUDIT_POLICIES = 'ORDSTEST_AUDIT'
+  AND CLIENT_PROGRAM_NAME IS NOT NULL;
+EXIT;
+EOF
+echo "-----------------------------------------------------"
+
+# Search for an AWR file
+awr_file=$(ls awr_*.txt 2>/dev/null | head -n 1)
+
+if [[ -n "$awr_file" ]]; then
+  echo "Found AWR file: $awr_file"
+  
+  # Extract raw timestamps
+  raw_begin=$(grep -oE '[0-9]{1,2}-[A-Za-z]{3}-[0-9]{2,4} [0-9]{2}:[0-9]{2}:[0-9]{2}' "$awr_file" | sed -n '1p')
+  raw_end=$(grep -oE '[0-9]{1,2}-[A-Za-z]{3}-[0-9]{2,4} [0-9]{2}:[0-9]{2}:[0-9]{2}' "$awr_file" | sed -n '2p')
+
+  # Convert to YYYY-MM-DDTHH:MI:SS format for easy copy-paste
+  # Uses 'date' command to reformat
+  fmt_begin=$(date -j -f "%d-%b-%y %H:%M:%S" "$raw_begin" "+%Y-%m-%dT%H:%M:%S" 2>/dev/null || date -d "$raw_begin" "+%Y-%m-%dT%H:%M:%S" 2>/dev/null)
+  fmt_end=$(date -j -f "%d-%b-%y %H:%M:%S" "$raw_end" "+%Y-%m-%dT%H:%M:%S" 2>/dev/null || date -d "$raw_end" "+%Y-%m-%dT%H:%M:%S" 2>/dev/null)
+
+  echo "Begin Snap (Ready for SQL): $fmt_begin"
+  echo "End Snap   (Ready for SQL): $fmt_end"
+else
+  echo "No AWR file matching pattern found in current directory."
+fi
+
+echo ""
+echo "====================================================="
+echo "STEP 2: GENERATE YOUR QUERY"
+echo "====================================================="
+
+# --- PART 2: PROMPT FOR PARAMETERS ---
+read -p "Enter CLIENT_PROGRAM_NAME: " client_program
+read -p "Enter BEGIN timestamp:    " begin_time
+read -p "Enter END timestamp:      " end_time
+read -p "Enter SQL_TEXT substring (leave blank for any): " sqltext_search
+
+# Provide a default value (single space) if blank
+: "${sqltext_search:= }"
+
+# --- PART 3: OUTPUT FINAL SQL ---
+echo
+echo "-----------------------------------------------------"
+echo "Copy the following SQL statement to use:"
+echo "-----------------------------------------------------"
+cat <<EOF
+SELECT *
+FROM UNIFIED_AUDIT_TRAIL
+WHERE UNIFIED_AUDIT_POLICIES = 'ORDSTESELECT
+  sql_id,
+  parsing_schema_name,
+  module,
+  executions_total,
+  executions_delta,
+  PLSEXEC_TIME_TOTAL,
+PLSEXEC_TIME_DELTA,
+JAVEXEC_TIME_TOTAl,
+JAVEXEC_TIME_DELTA
+FROM dba_hist_sqlstat
+WHERE sql_id = '1nt3bbspzm27n';ST_AUDIT'
+  AND CLIENT_PROGRAM_NAME = '$client_program'
+  AND EVENT_TIMESTAMP_UTC BETWEEN TO_TIMESTAMP('$begin_time', 'YYYY-MM-DD"T"HH24:MI:SS.FF6')
+      AND TO_TIMESTAMP('$end_time', 'YYYY-MM-DD"T"HH24:MI:SS.FF6')
+  AND DBMS_LOB.INSTR(
+        UPPER(SQL_TEXT),
+        UPPER('$sqltext_search')
+  ) > 0;
+EOF
+echo "-----------------------------------------------------"
+
+
