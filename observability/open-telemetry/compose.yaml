@@ -1,0 +1,93 @@
+# Local ORDS observability lab: database + ORDS + an all-in-one Grafana LGTM backend.
+# The LGTM image includes the OpenTelemetry Collector, Grafana, Tempo, Loki, and Prometheus.
+services:
+  # Oracle AI Database Free. The first initialization can take several minutes.
+  db:
+    image: container-registry.oracle.com/database/free:latest
+    environment:
+      # Compose reads this value from the local .env file; it is the database admin password.
+      ORACLE_PWD: ${ORACLE_PWD:?Copy .env.example to .env and set ORACLE_PWD}
+    ports:
+      # Bind to loopback so the demo database is not published to the local network.
+      - "127.0.0.1:${DB_PORT:-1521}:1521"
+    volumes:
+      # Keep database files when containers are stopped; `docker compose down -v` removes them.
+      - db-data:/opt/oracle/oradata
+    healthcheck:
+      test: ["CMD", "/opt/oracle/checkDBStatus.sh"]
+      interval: 10s
+      timeout: 10s
+      retries: 60
+      start_period: 5m
+
+  # One image provides the receiver and the Grafana/Tempo/Loki/Prometheus backends.
+  grafana-lgtm:
+    image: grafana/otel-lgtm:latest
+    environment:
+      # Grafana links in dashboards should point back to the host browser address.
+      GF_SERVER_ROOT_URL: http://localhost:${GRAFANA_PORT:-3000}
+    ports:
+      # Publish Grafana and OTLP receivers only on this computer.
+      - "127.0.0.1:${GRAFANA_PORT:-3000}:3000"
+      - "127.0.0.1:${OTLP_GRPC_PORT:-4317}:4317"
+      - "127.0.0.1:${OTLP_HTTP_PORT:-4318}:4318"
+    volumes:
+      # Load the dashboard provider and JSON dashboard when Grafana starts.
+      - ./grafana/dashboards.yaml:/otel-lgtm/grafana/conf/provisioning/dashboards/grafana-dashboards.yaml:ro
+      - ./grafana/dashboards:/otel-lgtm/grafana/conf/provisioning/dashboards/lab:ro
+    healthcheck:
+      # Check both Grafana's HTTP API and the bundled Collector readiness endpoint.
+      test: ["CMD-SHELL", "curl -fsS http://localhost:3000/api/health >/dev/null && curl -fsS http://localhost:13133/ready >/dev/null"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 30s
+
+  # Build the pinned ORDS image with a wrapper that adds the agent only to `ords serve`.
+  ords:
+    image: ords-observability:26.3.0
+    build:
+      context: ./ords
+    depends_on:
+      db:
+        condition: service_healthy
+      grafana-lgtm:
+        condition: service_healthy
+    environment:
+      # The database is reachable by Compose service name from inside this container.
+      DBHOST: db
+      DBPORT: 1521
+      DBSERVICENAME: FREEPDB1
+      ORACLE_PWD: ${ORACLE_PWD:?Copy .env.example to .env and set ORACLE_PWD}
+      ORACLE_USER_PWD: ${ORACLE_USER_PWD:?Copy .env.example to .env and set ORACLE_USER_PWD}
+      # The custom image wrapper adds the agent to `ords serve`; don't set JAVA_TOOL_OPTIONS here.
+      OTEL_SERVICE_NAME: ords
+      # Enable all three OpenTelemetry signals and send them using OTLP/HTTP to LGTM.
+      OTEL_TRACES_EXPORTER: otlp
+      OTEL_METRICS_EXPORTER: otlp
+      OTEL_LOGS_EXPORTER: otlp
+      OTEL_EXPORTER_OTLP_PROTOCOL: http/protobuf
+      # Use the Compose service DNS name; localhost here would mean the ORDS container.
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://grafana-lgtm:4318
+      # Metrics export every 15 seconds; rate/latency graphs need a few samples.
+      OTEL_METRIC_EXPORT_INTERVAL: "15000"
+      OTEL_TRACES_SAMPLER: always_on
+      # Bridge ORDS Java Util Logging runtime records into OpenTelemetry logs.
+      OTEL_INSTRUMENTATION_JAVA_UTIL_LOGGING_ENABLED: "true"
+    ports:
+      - "127.0.0.1:${ORDS_PORT:-8080}:8080"
+    volumes:
+      # ORDS stores its generated configuration between container restarts.
+      - ords-config:/etc/ords/config
+    healthcheck:
+      # This built-in endpoint confirms ORDS is serving HTTP; it does not query the database.
+      test: ["CMD-SHELL", "curl --fail --silent http://127.0.0.1:8080/ords/_/public-properties/ >/dev/null"]
+      interval: 15s
+      timeout: 10s
+      retries: 20
+      start_period: 3m
+
+volumes:
+  # These volumes preserve database files and generated ORDS configuration across restarts.
+  db-data:
+  ords-config:

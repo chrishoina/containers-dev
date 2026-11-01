@@ -1,0 +1,2 @@
+# Local environment contains Oracle demo passwords; commit only .env.example.
+.env

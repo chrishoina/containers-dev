@@ -574,3 +574,6 @@ Install as you would normally install.
 
 ## For more information about SQLcl Projects:
 Reach out to the SQLcl Project Extension documentation by visiting the [Database Application CI/CD Doc Link](https://docs.oracle.com/en/database/oracle/sql-developer-command-line/24.3/sqcug/database-application-ci-cd.html).
+
+
+Add troubleshooting steps to the readme, for these scenarios above, and other possible/likely scenarios. Provide the cause, the commands to inspecting/conducting an investigation, resolution steps, and the expected outcome. 

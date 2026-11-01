@@ -1,0 +1,9 @@
+# Grafana's file provider loads dashboard JSON from the mounted directory.
+# Compose mounts ./grafana/dashboards at this container path as read-only.
+apiVersion: 1
+providers:
+  - name: ORDS observability
+    folder: ORDS
+    type: file
+    options:
+      path: /otel-lgtm/grafana/conf/provisioning/dashboards/lab

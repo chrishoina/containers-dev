@@ -1,0 +1,75 @@
+services:
+  db:
+    image: container-registry.oracle.com/database/free:latest
+    environment:
+      - ORACLE_PDB=${ORACLE_PDB}
+      - ORACLE_PWD=${ORACLE_PWD}
+    volumes:
+      - db_config:/opt/oracle/oradata/
+    ports:
+      - "1521:1521"
+    networks:
+      - appnet
+    env_file:
+      - ./.env
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "echo 'select 1 from dual;' | /opt/oracle/product/26ai/dbhomeFree/bin/sqlplus -s / as sysdba >/dev/null 2>&1 || exit 1"
+        ]
+      interval: 30s
+      timeout: 10s
+      retries: 50
+      start_period: 180s
+
+  ords:
+    image: container-registry.oracle.com/database/ords:latest
+    environment:
+      - DBSERVICENAME=${ORACLE_PDB}
+      - DBHOST=db
+      - DBPORT=${DBPORT}
+      - ORDS_PUBLIC_USER_PWD=${ORACLE_PWD}
+      - ORACLE_PWD=${ORACLE_PWD}
+      - FORCE_SECURE=TRUE
+    volumes:
+      - ords_config:/etc/ords/config
+      - ./ords/ssl:/etc/ords/config/ssl:ro
+      - ./apex:/opt/oracle/apex
+    networks:
+      appnet:
+        aliases:
+          - ords-internal
+    env_file:
+      - ./.env
+    depends_on:
+      db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsSk https://ords-internal:8443/ords/ >/dev/null 2>&1 || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 150
+      start_period: 120s
+
+  ohs14:
+    image: container-registry.oracle.com/middleware/ohs:14.1.2.0-jdk21-ol8
+    platform: linux/amd64
+    ports:
+      - "7777:7777"
+      - "4443:4443"
+    volumes:
+      - ./ohs:/u01/oracle/bootdir:ro      
+    depends_on:
+      ords:
+        condition: service_healthy
+    networks:
+      - appnet
+
+volumes:
+  ords_config:
+  db_config:
+
+networks:
+  appnet:
+    driver: bridge

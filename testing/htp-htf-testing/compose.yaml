@@ -1,0 +1,29 @@
+name: ords-htp-lab
+
+services:
+  db19:
+    image: ${DB19_IMAGE:?Set DB19_IMAGE in .env}
+    environment:
+      ORACLE_SID: ORCLCDB
+      ORACLE_PDB: ORCLPDB1
+      ORACLE_PWD: ${ORACLE_PWD:?Set ORACLE_PWD in .env}
+      ORACLE_CHARACTERSET: AL32UTF8
+    ports:
+      - "127.0.0.1:1521:1521"
+    volumes:
+      - db19data:/opt/oracle/oradata
+
+  db26:
+    image: ${DB26_IMAGE:?Set DB26_IMAGE in .env}
+    environment:
+      ORACLE_PWD: ${ORACLE_PWD:?Set ORACLE_PWD in .env}
+      ORACLE_PDB: FREEPDB1
+      ORACLE_CHARACTERSET: AL32UTF8
+    ports:
+      - "127.0.0.1:1522:1521"
+    volumes:
+      - db26data:/opt/oracle/oradata
+
+volumes:
+  db19data:
+  db26data:

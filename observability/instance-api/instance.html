@@ -1,0 +1,1520 @@
+<!-- This dashboard is for demonstration purposes only. This should not be used in a production environment.
+ The Username and Password are passed as an HTTP request header, in Base 64 encoded format. So use this demo 
+ dashboard in a development environment only. -->
+
+ <!-- To deploy this locally, without any issues, add this file to a temporary directory, for instance I chose: /opt/oracle/ords/dashboard.
+  And then placed the instance.html file inside dashboard. 
+  
+  Then, I set the ORDS configuration setting standalone.doc.root like this: ords config set standalone.doc.root /opt/oracle/ords/dashboard 
+  I restart my ORDS deployment to pick up this change, then I'm able to access this dashboard via: http://127.0.0.1:8080/instance 
+  
+  I'm including this dashboard so you can get an idea of the kinds of things you can do with the information coming from these Instance APIs.
+
+  Email me if you have any issues: chris.hoina@oracle.com
+
+  Good luck! -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ORDS Pool Dashboard</title>
+  <style>
+    :root {
+      --bg: #f4efe5;
+      --panel: rgba(255, 252, 245, 0.9);
+      --panel-strong: #fffaf2;
+      --ink: #1c1b18;
+      --muted: #5c584f;
+      --line: rgba(71, 54, 23, 0.14);
+      --accent: #156f62;
+      --accent-2: #d47a1f;
+      --good: #18794e;
+      --warn: #b66a00;
+      --bad: #b42318;
+      --shadow: 0 18px 45px rgba(62, 43, 11, 0.12);
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+      color: var(--ink);
+      background:
+        radial-gradient(circle at top left, rgba(21, 111, 98, 0.18), transparent 30%),
+        radial-gradient(circle at top right, rgba(212, 122, 31, 0.18), transparent 28%),
+        linear-gradient(180deg, #f8f4ec 0%, var(--bg) 55%, #efe7d8 100%);
+    }
+
+    .shell {
+      width: 100%;
+      margin: 0;
+    }
+
+    .hero {
+      padding: 28px;
+      border: 1px solid var(--line);
+      border-radius: 28px;
+      background: linear-gradient(135deg, rgba(255, 251, 243, 0.94), rgba(246, 238, 224, 0.88));
+      box-shadow: var(--shadow);
+    }
+
+    .hero-top {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      gap: 20px;
+      flex-wrap: wrap;
+    }
+
+    h1 {
+      margin: 0;
+      font-size: clamp(2rem, 3.4vw, 3.4rem);
+      line-height: 0.95;
+      letter-spacing: -0.04em;
+    }
+
+    .subhead {
+      margin: 10px 0 0;
+      max-width: 780px;
+      color: var(--muted);
+      font-size: 1rem;
+      line-height: 1.5;
+    }
+
+    .toolbar {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+
+    button,
+    select {
+      border-radius: 999px;
+      border: 1px solid var(--line);
+      font: inherit;
+    }
+
+    button {
+      padding: 12px 18px;
+      cursor: pointer;
+      background: var(--ink);
+      color: #fff;
+      transition: transform 120ms ease, opacity 120ms ease;
+    }
+
+    button:hover,
+    .download-link:hover {
+      transform: translateY(-1px);
+      opacity: 0.95;
+    }
+
+    .download-link {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      padding: 12px 18px;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      background: var(--accent);
+      color: #fff;
+      font: inherit;
+      text-decoration: none;
+      transition: transform 120ms ease, opacity 120ms ease;
+    }
+
+    .download-link:focus-visible {
+      outline: 3px solid var(--accent-2);
+      outline-offset: 3px;
+    }
+
+    select {
+      padding: 12px 14px;
+      background: var(--panel-strong);
+      color: var(--ink);
+    }
+
+    .stamp {
+      margin-top: 18px;
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      color: var(--muted);
+      font-size: 0.95rem;
+    }
+
+    .badge {
+      padding: 8px 12px;
+      border-radius: 999px;
+      background: rgba(255, 255, 255, 0.65);
+      border: 1px solid var(--line);
+    }
+
+    .metrics {
+      margin-top: 22px;
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 14px;
+    }
+
+    .metric {
+      padding: 18px;
+      border-radius: 20px;
+      background: rgba(255, 255, 255, 0.72);
+      border: 1px solid var(--line);
+    }
+
+    .metric-label {
+      color: var(--muted);
+      font-size: 0.85rem;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+    }
+
+    .metric-value {
+      margin-top: 8px;
+      font-size: clamp(1.6rem, 3vw, 2.5rem);
+      font-weight: 700;
+      letter-spacing: -0.04em;
+    }
+
+    .good { color: var(--good); }
+    .warn { color: var(--warn); }
+    .bad { color: var(--bad); }
+
+    .grid {
+      margin-top: 20px;
+      display: grid;
+      grid-template-columns: minmax(0, 1fr);
+      gap: 18px;
+      align-items: start;
+    }
+
+    .panel {
+      min-width: 0;
+      border-radius: 24px;
+      padding: 20px;
+      border: 1px solid var(--line);
+      background: var(--panel);
+      box-shadow: var(--shadow);
+    }
+
+    .panel-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      gap: 12px;
+      margin-bottom: 16px;
+    }
+
+    .panel h2 {
+      margin: 0;
+      font-size: 1.2rem;
+      letter-spacing: -0.02em;
+    }
+
+    .panel-note {
+      color: var(--muted);
+      font-size: 0.9rem;
+    }
+
+    .pool-id-label {
+      position: relative;
+      z-index: 1;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      width: max-content;
+      max-width: 100%;
+    }
+
+    .pool-id-label:focus-within {
+      z-index: 60;
+    }
+
+    .pool-id-label .kv-label,
+    .pool-id-label .link-rel {
+      margin: 0;
+    }
+
+    .pool-id-info {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      flex: 0 0 18px;
+      width: 18px;
+      height: 18px;
+      padding: 0;
+      border-radius: 50%;
+      background: var(--accent);
+      color: #fff;
+      font-size: 0.7rem;
+      font-weight: 700;
+      line-height: 1;
+    }
+
+    .pool-id-info:hover,
+    .pool-id-info:focus-visible {
+      z-index: 61;
+    }
+
+    .pool-id-tooltip {
+      position: absolute;
+      z-index: 62;
+      left: 0;
+      bottom: calc(100% + 12px);
+      width: min(520px, calc(100vw - 32px));
+      padding: 14px 16px;
+      border: 1px solid rgba(255, 255, 255, 0.18);
+      border-radius: 12px;
+      background: var(--ink);
+      color: #fff;
+      box-shadow: var(--shadow);
+      opacity: 0;
+      visibility: hidden;
+      pointer-events: auto;
+      transition: opacity 120ms ease;
+    }
+
+    .pool-id-label:hover .pool-id-tooltip,
+    .pool-id-label:focus-within .pool-id-tooltip {
+      opacity: 1;
+      visibility: visible;
+    }
+
+    .pool-id-tooltip h3 {
+      margin: 0;
+      font-size: 0.95rem;
+    }
+
+    .pool-id-tooltip p {
+      margin: 6px 0 10px;
+      color: rgba(255, 255, 255, 0.84);
+      font-size: 0.82rem;
+      font-weight: 400;
+      line-height: 1.4;
+      letter-spacing: normal;
+      text-transform: none;
+    }
+
+    .pool-id-tooltip table {
+      width: 100%;
+      border-collapse: collapse;
+      text-align: left;
+    }
+
+    .pool-id-tooltip th,
+    .pool-id-tooltip td {
+      padding: 6px 8px;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.2);
+      vertical-align: top;
+    }
+
+    .pool-id-tooltip th {
+      color: rgba(255, 255, 255, 0.72);
+      font-size: 0.7rem;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+
+    .pool-id-tooltip td:last-child {
+      width: 1%;
+      white-space: nowrap;
+    }
+
+    .pool-id-example {
+      margin-bottom: 0 !important;
+    }
+
+    .section-title {
+      margin: 0;
+      font-size: 0.82rem;
+      text-transform: uppercase;
+      letter-spacing: 0.09em;
+      color: var(--muted);
+    }
+
+    .disclosure {
+      margin-top: 18px;
+    }
+
+    .disclosure > summary {
+      cursor: pointer;
+    }
+
+    .disclosure[open] > summary {
+      margin-bottom: 8px;
+    }
+
+    .raw-json-trigger {
+      margin-top: 18px;
+    }
+
+    .raw-json-modal {
+      width: calc(100vw - 32px);
+      max-width: none;
+      max-height: calc(100vh - 32px);
+      overflow: auto;
+      margin: auto;
+      padding: 24px;
+      border: 1px solid var(--line);
+      border-radius: 20px;
+      color: var(--ink);
+      background: var(--panel-strong);
+      box-shadow: var(--shadow);
+    }
+
+    .raw-json-modal::backdrop {
+      background: rgba(18, 16, 12, 0.58);
+      backdrop-filter: blur(2px);
+    }
+
+    .raw-json-modal-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      margin-bottom: 16px;
+    }
+
+    .raw-json-modal-header h2 {
+      margin: 0;
+      font-size: 1.25rem;
+    }
+
+    .raw-json-close {
+      width: auto;
+      flex: 0 0 auto;
+      padding: 4px 12px;
+      background: transparent;
+      color: var(--ink);
+      font-size: 1.5rem;
+      line-height: 1;
+    }
+
+    .raw-json-modal pre {
+      max-height: none;
+      overflow: visible;
+      white-space: pre-wrap;
+      overflow-wrap: anywhere;
+    }
+
+    .kv-grid {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: flex-start;
+      gap: 10px;
+    }
+
+    .kv {
+      width: max-content;
+      max-width: 100%;
+      padding: 14px;
+      border-radius: 18px;
+      background: rgba(255, 255, 255, 0.7);
+      border: 1px solid rgba(71, 54, 23, 0.1);
+    }
+
+    .kv-label {
+      display: block;
+      font-size: 0.78rem;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+    }
+
+    .kv-value {
+      margin-top: 6px;
+      font-size: 1.1rem;
+      font-weight: 600;
+      word-break: break-word;
+    }
+
+    .list,
+    .stats-list {
+      margin: 0;
+      padding: 0;
+      list-style: none;
+      display: grid;
+      gap: 10px;
+    }
+
+    .list li,
+    .stats-list > li {
+      padding: 12px 14px;
+      border-radius: 16px;
+      background: rgba(255, 255, 255, 0.72);
+      border: 1px solid rgba(71, 54, 23, 0.1);
+    }
+
+    .link-rel {
+      display: block;
+      margin-bottom: 4px;
+      color: var(--muted);
+      font-size: 0.78rem;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+    }
+
+    .cache-pool-id {
+      display: flex;
+      align-items: baseline;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-bottom: 8px;
+    }
+
+    .cache-pool-label {
+      color: var(--muted);
+      font-size: 0.9rem;
+      font-weight: 600;
+      letter-spacing: normal;
+      text-transform: none;
+    }
+
+    .cache-pool-id code {
+      overflow-wrap: anywhere;
+    }
+
+    .url {
+      word-break: break-word;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+      font-size: 0.9rem;
+    }
+
+    .stats-list {
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      align-items: start;
+    }
+
+    .stats-list > .stats-category {
+      display: block;
+      min-width: 0;
+      padding: 16px;
+      border-radius: 16px;
+      background: rgba(255, 255, 255, 0.72);
+      border: 1px solid rgba(71, 54, 23, 0.1);
+    }
+
+    .stats-category-heading {
+      margin: 0 0 8px;
+      color: var(--muted);
+      font-size: 0.82rem;
+      letter-spacing: 0.07em;
+      text-transform: uppercase;
+    }
+
+    .stats-category-list {
+      display: grid;
+      gap: 0;
+      margin: 0;
+      padding: 0;
+      list-style: none;
+    }
+
+    .stats-category-list > li {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      gap: 12px;
+      min-width: 0;
+      padding: 8px 0;
+      border: 0;
+      border-bottom: 1px solid rgba(71, 54, 23, 0.1);
+      border-radius: 0;
+      background: transparent;
+    }
+
+    .stats-category-list > li:last-child {
+      padding-bottom: 0;
+      border-bottom: 0;
+    }
+
+    .stats-category-list > .stats-group {
+      display: block;
+    }
+
+    .stats-sublist {
+      display: grid;
+      gap: 8px;
+      margin: 10px 0 0;
+      padding: 0 0 0 18px;
+      list-style: disc;
+    }
+
+    .stats-sublist > li {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      gap: 12px;
+      padding: 0;
+      border: 0;
+      background: transparent;
+    }
+
+    .stats-key {
+      color: var(--muted);
+      font-size: 0.9rem;
+    }
+
+    .stats-label-wrap {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      min-width: 0;
+    }
+
+    .stat-info {
+      position: relative;
+      z-index: 1;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      flex: 0 0 20px;
+      width: 20px;
+      height: 20px;
+      padding: 0;
+      border-radius: 50%;
+      background: var(--accent);
+      color: #fff;
+      font-size: 0.75rem;
+      font-weight: 700;
+      line-height: 1;
+    }
+
+    .stat-info:hover,
+    .stat-info:focus-visible {
+      z-index: 30;
+    }
+
+    .stat-info::after {
+      content: attr(data-tooltip);
+      position: absolute;
+      top: auto;
+      bottom: calc(100% + 12px);
+      left: 50%;
+      width: max-content;
+      max-width: min(320px, calc(100vw - 32px));
+      padding: 10px 12px;
+      border-radius: 8px;
+      background: var(--ink);
+      color: #fff;
+      box-shadow: var(--shadow);
+      font-size: 0.8rem;
+      font-weight: 400;
+      line-height: 1.4;
+      letter-spacing: normal;
+      text-align: left;
+      text-transform: none;
+      white-space: normal;
+      transform: translateX(-50%);
+      opacity: 0;
+      visibility: hidden;
+      pointer-events: none;
+      z-index: 31;
+    }
+
+    .stat-info:hover::after,
+    .stat-info:focus-visible::after {
+      opacity: 1;
+      visibility: visible;
+    }
+
+    .stats-value {
+      font-weight: 700;
+      text-align: right;
+      word-break: break-word;
+    }
+
+    pre {
+      margin: 0;
+      padding: 16px;
+      border-radius: 18px;
+      background: #201d18;
+      color: #f5efe2;
+      overflow: auto;
+      max-height: 320px;
+      font-size: 0.86rem;
+      line-height: 1.5;
+    }
+
+    .status-line {
+      margin-top: 16px;
+      padding: 14px 16px;
+      border-radius: 18px;
+      background: rgba(255, 255, 255, 0.66);
+      border: 1px solid var(--line);
+      color: var(--muted);
+    }
+
+    .status-line.error {
+      color: var(--bad);
+      background: rgba(251, 233, 231, 0.9);
+      border-color: rgba(180, 35, 24, 0.2);
+    }
+
+    .empty {
+      color: var(--muted);
+      padding: 14px;
+      border-radius: 16px;
+      background: rgba(255, 255, 255, 0.55);
+      border: 1px dashed rgba(71, 54, 23, 0.16);
+    }
+
+    @media (max-width: 1120px) {
+      .metrics,
+      .stats-list {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+    }
+
+    @media (max-width: 700px) {
+      .hero,
+      .panel {
+        border-radius: 22px;
+      }
+
+      .grid,
+      .metrics,
+      .stats-list {
+        grid-template-columns: 1fr;
+      }
+
+      .toolbar {
+        width: 100%;
+      }
+
+      button,
+      select,
+      .download-link {
+        width: 100%;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main class="shell">
+    <section class="hero">
+      <div class="hero-top">
+        <div>
+          <h1>ORDS Pool Dashboard</h1>
+          <p class="subhead">
+            Live view of instance status, pool cache inventory, and detailed metrics for the
+            <code>|default|lo|</code> pool.
+          </p>
+        </div>
+        <div class="toolbar">
+          <select id="refreshInterval" aria-label="Auto refresh interval">
+            <option value="0">Manual refresh</option>
+            <option value="5000">Every 5 seconds</option>
+            <option value="15000" selected>Every 15 seconds</option>
+            <option value="30000">Every 30 seconds</option>
+            <option value="60000">Every 60 seconds</option>
+          </select>
+          <button id="refreshButton" type="button">Refresh now</button>
+          <a
+            class="download-link"
+            id="openapiDownload"
+            href="http://127.0.0.1:8080/ords/_/instance-api/latest/metadata-catalog/openapi.json"
+            download="ords-instance-api-openapi.json"
+          >Download OpenAPI spec</a>
+        </div>
+      </div>
+
+      <div class="stamp">
+        <span class="badge">Host: <strong>127.0.0.1:8080</strong></span>
+        <span class="badge">Auth: <strong>Basic</strong></span>
+        <span class="badge">Pool ID: <strong>|default|lo|</strong></span>
+      </div>
+
+      <div class="metrics">
+        <article class="metric">
+          <span class="metric-label">Pool Health</span>
+          <div class="metric-value" id="healthMetric">...</div>
+        </article>
+        <article class="metric">
+          <span class="metric-label">Valid Pools</span>
+          <div class="metric-value" id="validPoolsMetric">...</div>
+        </article>
+        <article class="metric">
+          <span class="metric-label">Borrowed Connections</span>
+          <div class="metric-value" id="borrowedMetric">...</div>
+        </article>
+        <article class="metric">
+          <span class="metric-label">Available Connections</span>
+          <div class="metric-value" id="availableMetric">...</div>
+        </article>
+      </div>
+
+      <div class="status-line" id="statusLine">Waiting for first refresh.</div>
+    </section>
+
+    <section class="grid">
+      <article class="panel">
+        <div class="panel-header">
+          <h2>Pool Health</h2>
+          <span class="panel-note">/status</span>
+        </div>
+        <div class="kv-grid" id="statusSummary"></div>
+        <details class="disclosure">
+          <summary class="section-title">Links</summary>
+          <ul class="list" id="statusLinks"></ul>
+        </details>
+        <button
+          class="raw-json-trigger"
+          type="button"
+          data-raw-target="statusRaw"
+          data-raw-title="Pool Health Raw JSON"
+        >View Raw JSON</button>
+        <pre id="statusRaw" hidden></pre>
+      </article>
+
+      <article class="panel">
+        <div class="panel-header">
+          <h2>Pool Cache Details</h2>
+          <span class="panel-note">/database-pools-cache/</span>
+        </div>
+        <div class="kv-grid" id="cacheSummary"></div>
+        <details class="disclosure">
+          <summary class="section-title">Pools</summary>
+          <ul class="list" id="cacheItems"></ul>
+        </details>
+        <button
+          class="raw-json-trigger"
+          type="button"
+          data-raw-target="cacheRaw"
+          data-raw-title="Pool Cache Details Raw JSON"
+        >View Raw JSON</button>
+        <pre id="cacheRaw" hidden></pre>
+      </article>
+
+      <article class="panel">
+        <div class="panel-header">
+          <h2>Pool Details</h2>
+          <span class="panel-note">/database-pools-cache/default,lo</span>
+        </div>
+        <div class="kv-grid" id="detailSummary"></div>
+        <details class="disclosure">
+          <summary class="section-title">Statistics</summary>
+          <ul class="stats-list" id="detailStats"></ul>
+        </details>
+        <button
+          class="raw-json-trigger"
+          type="button"
+          data-raw-target="detailRaw"
+          data-raw-title="Pool Details Raw JSON"
+        >View Raw JSON</button>
+        <pre id="detailRaw" hidden></pre>
+      </article>
+    </section>
+
+    <dialog class="raw-json-modal" id="rawJsonModal" aria-labelledby="rawJsonTitle">
+      <div class="raw-json-modal-header">
+        <h2 id="rawJsonTitle">Raw JSON</h2>
+        <button
+          class="raw-json-close"
+          id="rawJsonClose"
+          type="button"
+          aria-label="Close raw JSON dialog"
+        >&times;</button>
+      </div>
+      <pre id="rawJsonModalContent"></pre>
+    </dialog>
+  </main>
+
+  <script>
+    const USERNAME = "instance_api_user";
+    const PASSWORD = "InstanceApi26aiDev1";
+
+    function createBasicAuthHeader(username, password) {
+      const bytes = new TextEncoder().encode(`${username}:${password}`);
+      let binary = "";
+      bytes.forEach((byte) => {
+        binary += String.fromCharCode(byte);
+      });
+      return `Basic ${btoa(binary)}`;
+    }
+
+    const AUTH_HEADER = createBasicAuthHeader(USERNAME, PASSWORD);
+    const BASE_URL = "http://127.0.0.1:8080/ords/_/instance-api/latest";
+    const ENDPOINTS = {
+      status: `${BASE_URL}/status`,
+      cache: `${BASE_URL}/database-pools-cache/`,
+      detail: `${BASE_URL}/database-pools-cache/default,lo`,
+      openapi: `${BASE_URL}/metadata-catalog/openapi.json`
+    };
+
+    const state = {
+      timerId: null
+    };
+
+    const elements = {
+      refreshButton: document.getElementById("refreshButton"),
+      openapiDownload: document.getElementById("openapiDownload"),
+      refreshInterval: document.getElementById("refreshInterval"),
+      statusLine: document.getElementById("statusLine"),
+      healthMetric: document.getElementById("healthMetric"),
+      validPoolsMetric: document.getElementById("validPoolsMetric"),
+      borrowedMetric: document.getElementById("borrowedMetric"),
+      availableMetric: document.getElementById("availableMetric"),
+      statusSummary: document.getElementById("statusSummary"),
+      statusLinks: document.getElementById("statusLinks"),
+      statusRaw: document.getElementById("statusRaw"),
+      cacheSummary: document.getElementById("cacheSummary"),
+      cacheItems: document.getElementById("cacheItems"),
+      cacheRaw: document.getElementById("cacheRaw"),
+      detailSummary: document.getElementById("detailSummary"),
+      detailStats: document.getElementById("detailStats"),
+      detailRaw: document.getElementById("detailRaw"),
+      rawJsonModal: document.getElementById("rawJsonModal"),
+      rawJsonTitle: document.getElementById("rawJsonTitle"),
+      rawJsonModalContent: document.getElementById("rawJsonModalContent"),
+      rawJsonClose: document.getElementById("rawJsonClose")
+    };
+
+    function formatValue(value) {
+      if (value === null || value === undefined || value === "") {
+        return "n/a";
+      }
+      if (typeof value === "number") {
+        return value.toLocaleString();
+      }
+      return String(value);
+    }
+
+    function setMetric(element, value, tone) {
+      element.textContent = value;
+      element.className = "metric-value";
+      if (tone) {
+        element.classList.add(tone);
+      }
+    }
+
+    let poolIdTooltipSequence = 0;
+
+    function createPoolIdLabel(labelClass, labelText = "Pool ID") {
+      const wrapper = document.createElement("div");
+      wrapper.className = "pool-id-label";
+
+      const label = document.createElement("span");
+      label.className = labelClass;
+      label.textContent = labelText;
+
+      const info = document.createElement("button");
+      info.className = "pool-id-info";
+      info.type = "button";
+      info.textContent = "i";
+      info.setAttribute("aria-label", "Pool identifier source codes");
+
+      const tooltip = document.createElement("div");
+      tooltip.className = "pool-id-tooltip";
+      tooltip.id = `pool-id-source-tooltip-${++poolIdTooltipSequence}`;
+      tooltip.setAttribute("role", "tooltip");
+      info.setAttribute("aria-describedby", tooltip.id);
+
+      const heading = document.createElement("h3");
+      heading.textContent = "Pool identifier source codes";
+      const description = document.createElement("p");
+      description.textContent = "The pool type in the identifier indicates where its configuration comes from.";
+
+      const table = document.createElement("table");
+      const head = document.createElement("thead");
+      const headerRow = document.createElement("tr");
+      ["Configuration source", "Type code"].forEach((text) => {
+        const cell = document.createElement("th");
+        cell.scope = "col";
+        cell.textContent = text;
+        headerRow.appendChild(cell);
+      });
+      head.appendChild(headerRow);
+
+      const body = document.createElement("tbody");
+      [
+        ["Local", "lo"],
+        ["Central configuration server", "re"],
+        ["ETCD", "re"],
+        ["OCI Database API Gateway Configuration Service", "re"]
+      ].forEach(([source, code]) => {
+        const row = document.createElement("tr");
+        const sourceCell = document.createElement("td");
+        sourceCell.textContent = source;
+        const codeCell = document.createElement("td");
+        const codeValue = document.createElement("code");
+        codeValue.textContent = code;
+        codeCell.appendChild(codeValue);
+        row.append(sourceCell, codeCell);
+        body.appendChild(row);
+      });
+      table.append(head, body);
+
+      const example = document.createElement("p");
+      example.className = "pool-id-example";
+      example.append(document.createTextNode("Local example: "));
+      const exampleId = document.createElement("code");
+      exampleId.textContent = "|default|lo|";
+      example.appendChild(exampleId);
+
+      tooltip.append(heading, description, table, example);
+      wrapper.append(label, info, tooltip);
+      return wrapper;
+    }
+
+    function createKvItem(label, value) {
+      const wrapper = document.createElement("div");
+      wrapper.className = "kv";
+
+      let title;
+      if (label === "Pool ID") {
+        title = createPoolIdLabel("kv-label");
+      } else {
+        title = document.createElement("span");
+        title.className = "kv-label";
+        title.textContent = label;
+      }
+
+      const body = document.createElement("div");
+      body.className = "kv-value";
+      body.textContent = formatValue(value);
+
+      wrapper.append(title, body);
+      return wrapper;
+    }
+
+    function renderKvGrid(container, entries) {
+      container.replaceChildren();
+      entries.forEach(([label, value]) => container.appendChild(createKvItem(label, value)));
+    }
+
+    function renderLinks(container, links) {
+      container.replaceChildren();
+
+      if (!Array.isArray(links) || links.length === 0) {
+        container.appendChild(createEmptyState("No links returned."));
+        return;
+      }
+
+      links.forEach((link) => {
+        const item = document.createElement("li");
+        const rel = document.createElement("span");
+        rel.className = "link-rel";
+        rel.textContent = link.rel || "link";
+
+        const url = document.createElement("div");
+        url.className = "url";
+        url.textContent = link.href || "n/a";
+
+        item.append(rel, url);
+        container.appendChild(item);
+      });
+    }
+
+    function renderCacheItems(container, items) {
+      container.replaceChildren();
+
+      if (!Array.isArray(items) || items.length === 0) {
+        container.appendChild(createEmptyState("No pools found in cache."));
+        return;
+      }
+
+      items.forEach((item) => {
+        const row = document.createElement("li");
+        const idLine = document.createElement("div");
+        idLine.className = "cache-pool-id";
+
+        const idLabel = createPoolIdLabel("cache-pool-label", "Pool ID:");
+
+        const idValue = document.createElement("code");
+        idValue.textContent = formatValue(item.id);
+        idLine.append(idLabel, idValue);
+        row.appendChild(idLine);
+
+        [
+          ["Pool Creation Date", item.created],
+          ["Pool State", item.validity],
+          ["Current Borrowed Connections", item.borrowedConnectionsCount],
+          ["Available Pool Connections", item.availableConnectionsCount]
+        ].forEach(([label, value]) => {
+          const field = document.createElement("div");
+          field.className = "stats-key";
+          field.textContent = `${label}: ${formatValue(value)}`;
+          row.appendChild(field);
+        });
+
+        container.appendChild(row);
+      });
+    }
+
+    function parseColocationStats(value) {
+      if (Array.isArray(value)) {
+        return value.map((entry) => {
+          if (Array.isArray(entry) && entry.length >= 2) {
+            return [String(entry[0]), entry[1]];
+          }
+          return parseColocationEntry(entry);
+        }).filter(Boolean);
+      }
+
+      if (value && typeof value === "object") {
+        return Object.entries(value);
+      }
+
+      if (typeof value !== "string") {
+        return [];
+      }
+
+      const content = value.trim().replace(/^\[/, "").replace(/\]$/, "");
+      if (!content) {
+        return [];
+      }
+
+      return content.split(/,\s*/).map(parseColocationEntry).filter(Boolean);
+    }
+
+    function parseColocationEntry(entry) {
+      const text = String(entry).trim();
+      const separator = text.indexOf(":");
+      if (separator < 1) {
+        return null;
+      }
+
+      return [text.slice(0, separator).trim(), text.slice(separator + 1).trim()];
+    }
+
+    const STATISTIC_DESCRIPTIONS = {
+      abandonedconnectionscount: "Number of abandoned connections reclaimed by the pool.",
+      availableconnectionscount: "Connections currently available to borrow; these are not in use by clients.",
+      averageborrowedconnectionscount: "Average number of connections actively in use by clients.",
+      averageconnectionwaittime: "Average time, in milliseconds, that a user thread waits to obtain a connection.",
+      borrowedconnectionscount: "Connections currently borrowed and actively in use by clients.",
+      connectioncreationattemptssincelastoutage: "Connection creation attempts made during the most recent database outage after SQLRecoverableException. The count resets after the first successful connection creation.",
+      connectionsclosedcount: "Number of connections closed by this pool.",
+      connectionscreatedcount: "Number of connections created for this pool.",
+      cumulativeconnectionborrowedcount: "Number of times connections have been borrowed over the life of the pool.",
+      cumulativeconnectioncreationattemts: "Connection creation attempts made during database outages since the pool data source started or restarted.",
+      cumulativeconnectioncreationattempts: "Connection creation attempts made during database outages since the pool data source started or restarted.",
+      cumulativeconnectionreturnedcount: "Number of connections returned to the pool over its lifetime.",
+      cumulativeconnectionusetime: "Total time, in milliseconds, that borrowed connections remained in use.",
+      cumulativeconnectionwaittime: "Total time, in milliseconds, that requests waited for connections, including successful and failed waits.",
+      cumulativefailedconnectionwaitcount: "Number of connection requests that waited but failed to borrow a connection.",
+      cumulativefailedconnectionwaittime: "Total time, in milliseconds, spent waiting on requests that failed to borrow a connection.",
+      cumulativesuccessfulconnectionwaitcount: "Number of connection requests that waited and then successfully borrowed a connection.",
+      cumulativesuccessfulconnectionwaittime: "Total time, in milliseconds, spent waiting on requests that successfully borrowed a connection.",
+      labeledconnectionscount: "Number of connections in the pool that have connection labels.",
+      peakborrowedconnectionscount: "Highest number of simultaneously borrowed connections reached during the pool's life.",
+      peakconnectionscount: "Highest total number of connections reached during the pool's life.",
+      peakconnectionwaittime: "Longest connection wait, in milliseconds; includes requests that ultimately failed.",
+      pendingrequestscount: "Clients currently waiting to obtain a connection from the pool.",
+      remainingpoolcapacitycount: "Additional connections that can be added before the pool reaches maxPoolSize.",
+      shardconnectionstats: "Per-shard connection counts, including total, borrowed, and available connections for shards discovered by the pool.",
+      totalconnectionscount: "Total connections in the pool, including both available and borrowed connections.",
+      shortform: "Compact summary of pool statistics used in exception messages.",
+      colocationstats: "UCP processing information for COLOCATION_TAG support, including whether certain high-availability features apply.",
+      connectionrepurposecount: "Number of times a shared-pool connection was reused across pluggable databases by switching its container and service.",
+      failedaffinitybasedborrowcount: "Borrow requests that returned connections which did not match the requested affinity context.",
+      failedrclbbasedborrowcount: "Borrow requests that failed to use Runtime Connection Load Balancing algorithms.",
+      fcfprocessinginfo: "Recent Fast Connection Failover attempts, including outcomes, RAC instances, connections cleaned up, and failure details.",
+      fcfprocessinginfoprocessedonly: "Processed-only Fast Connection Failover information reported by UCP; its release reference does not further define this filter.",
+      successfulaffinitybasedborrowcount: "Borrow requests that succeeded in matching the requested affinity context.",
+      successfulrclbbasedborrowcount: "Borrow requests that succeeded in using Runtime Connection Load Balancing algorithms.",
+      isracdataaffinityenabled: "Indicates whether RAC data affinity is enabled in the pool's co-location processing.",
+      isdatadependentroutingenabled: "Indicates whether data-dependent routing is enabled in the pool's co-location processing.",
+      isrlbenabled: "Indicates whether Runtime Connection Load Balancing is enabled in the pool's co-location processing.",
+      allowinstancenameatconnectioncreations: "Indicates whether pool connection creation allows INSTANCE_NAME to be set in the CONNECT_DATA section of the Oracle connect string."
+    };
+
+    const STATISTIC_LABELS = {
+      fcfprocessinginfo: "FCF processing information",
+      fcfprocessinginfoprocessedonly: "Processed FCF information only",
+      abandonedconnectionscount: "Abandoned connections",
+      availableconnectionscount: "Available connections",
+      averageborrowedconnectionscount: "Average borrowed connections",
+      averageconnectionwaittime: "Average connection wait time (ms)",
+      borrowedconnectionscount: "Borrowed connections",
+      colocationstats: "Co-location statistics",
+      connectioncreationattemptssincelastoutage: "Connection creation attempts since last outage",
+      connectionrepurposecount: "Connections repurposed",
+      connectionsclosedcount: "Connections closed",
+      connectionscreatedcount: "Connections created",
+      cumulativeconnectionborrowedcount: "Total connection borrows",
+      cumulativeconnectioncreationattempts: "Cumulative connection creation attempts",
+      cumulativeconnectioncreationattemts: "Cumulative connection creation attempts (API key: Attemts)",
+      cumulativeconnectionreturnedcount: "Total connections returned",
+      cumulativeconnectionusetime: "Cumulative connection use time (ms)",
+      cumulativeconnectionwaittime: "Cumulative connection wait time (ms)",
+      cumulativefailedconnectionwaitcount: "Failed connection waits",
+      cumulativefailedconnectionwaittime: "Failed connection wait time (ms)",
+      cumulativesuccessfulconnectionwaitcount: "Successful connection waits",
+      cumulativesuccessfulconnectionwaittime: "Successful connection wait time (ms)",
+      failedaffinitybasedborrowcount: "Failed affinity-based borrows",
+      failedrclbbasedborrowcount: "Failed runtime load-balanced borrows (RCLB)",
+      isracdataaffinityenabled: "RAC data affinity enabled",
+      isdatadependentroutingenabled: "Data-dependent routing enabled",
+      isrlbenabled: "Runtime connection load balancing enabled",
+      allowinstancenameatconnectioncreations: "Allow INSTANCE_NAME at connection creation",
+      labeledconnectionscount: "Labeled connections",
+      peakborrowedconnectionscount: "Peak borrowed connections",
+      peakconnectionwaittime: "Longest connection wait (ms)",
+      peakconnectionscount: "Peak total connections",
+      pendingrequestscount: "Requests waiting for a connection",
+      remainingpoolcapacitycount: "Remaining pool capacity",
+      shardconnectionstats: "Per-shard connection statistics",
+      successfulaffinitybasedborrowcount: "Successful affinity-based borrows",
+      successfulrclbbasedborrowcount: "Successful runtime load-balanced borrows (RCLB)"
+    };
+
+    const STATISTIC_GROUPS = {
+      abandonedconnectionscount: "Pool size and capacity",
+      availableconnectionscount: "Pool size and capacity",
+      borrowedconnectionscount: "Pool size and capacity",
+      labeledconnectionscount: "Pool size and capacity",
+      peakborrowedconnectionscount: "Pool size and capacity",
+      peakconnectionscount: "Pool size and capacity",
+      pendingrequestscount: "Pool size and capacity",
+      remainingpoolcapacitycount: "Pool size and capacity",
+      totalconnectionscount: "Pool size and capacity",
+
+      averageborrowedconnectionscount: "Connection activity and waits",
+      averageconnectionwaittime: "Connection activity and waits",
+      cumulativeconnectionborrowedcount: "Connection activity and waits",
+      cumulativeconnectionreturnedcount: "Connection activity and waits",
+      cumulativeconnectionusetime: "Connection activity and waits",
+      cumulativeconnectionwaittime: "Connection activity and waits",
+      cumulativefailedconnectionwaitcount: "Connection activity and waits",
+      cumulativefailedconnectionwaittime: "Connection activity and waits",
+      cumulativesuccessfulconnectionwaitcount: "Connection activity and waits",
+      cumulativesuccessfulconnectionwaittime: "Connection activity and waits",
+      peakconnectionwaittime: "Connection activity and waits",
+
+      connectioncreationattemptssincelastoutage: "Connection lifecycle",
+      connectionrepurposecount: "Connection lifecycle",
+      connectionsclosedcount: "Connection lifecycle",
+      connectionscreatedcount: "Connection lifecycle",
+      cumulativeconnectioncreationattempts: "Connection lifecycle",
+      cumulativeconnectioncreationattemts: "Connection lifecycle",
+
+      fcfprocessinginfo: "High availability and routing",
+      fcfprocessinginfoprocessedonly: "High availability and routing",
+      colocationstats: "High availability and routing",
+      failedaffinitybasedborrowcount: "High availability and routing",
+      failedrclbbasedborrowcount: "High availability and routing",
+      successfulaffinitybasedborrowcount: "High availability and routing",
+      successfulrclbbasedborrowcount: "High availability and routing",
+      isracdataaffinityenabled: "High availability and routing",
+      isdatadependentroutingenabled: "High availability and routing",
+      isrlbenabled: "High availability and routing",
+      allowinstancenameatconnectioncreations: "High availability and routing",
+
+      shardconnectionstats: "Sharding",
+      shortform: "Pool summary"
+    };
+
+    const STATISTIC_GROUP_ORDER = [
+      "Pool size and capacity",
+      "Connection activity and waits",
+      "Connection lifecycle",
+      "High availability and routing",
+      "Sharding",
+      "Pool summary",
+      "Additional statistics"
+    ];
+
+    function normalizeStatisticKey(key) {
+      return String(key).toLowerCase().replace(/[^a-z0-9]/g, "");
+    }
+
+    function humanizeStatisticKey(key) {
+      return String(key)
+        .replace(/([A-Z]+)([A-Z][a-z])/g, "$1 $2")
+        .replace(/([a-z0-9])([A-Z])/g, "$1 $2")
+        .replace(/[_-]+/g, " ")
+        .replace(/^./, character => character.toUpperCase());
+    }
+
+    function createStatisticLabel(key) {
+      const label = document.createElement("span");
+      label.className = "stats-label-wrap";
+
+      const normalizedKey = normalizeStatisticKey(key);
+      const displayName = STATISTIC_LABELS[normalizedKey] || humanizeStatisticKey(key);
+      const name = document.createElement("span");
+      name.className = "stats-key";
+      name.textContent = displayName;
+
+      const description = STATISTIC_DESCRIPTIONS[normalizedKey] ||
+        `Oracle UCP reports this runtime pool statistic as “${key}”; its precise meaning may depend on the pool implementation.`;
+      const info = document.createElement("button");
+      info.className = "stat-info";
+      info.type = "button";
+      info.textContent = "i";
+      info.dataset.tooltip = description;
+      info.setAttribute("aria-label", `Information about ${displayName}: ${description}`);
+
+      label.append(name, info);
+      return label;
+    }
+
+    function createStatisticItem(key, value) {
+      const item = document.createElement("li");
+      item.appendChild(createStatisticLabel(key));
+
+      const colocationEntries = normalizeStatisticKey(key) === "colocationstats"
+        ? parseColocationStats(value)
+        : [];
+      if (colocationEntries.length > 0) {
+        item.classList.add("stats-group");
+        const sublist = document.createElement("ul");
+        sublist.className = "stats-sublist";
+
+        colocationEntries.forEach(([subKey, subValue]) => {
+          const subitem = document.createElement("li");
+          const subitemValue = document.createElement("span");
+          subitemValue.className = "stats-value";
+          subitemValue.textContent = formatValue(subValue);
+
+          subitem.append(createStatisticLabel(subKey), subitemValue);
+          sublist.appendChild(subitem);
+        });
+
+        item.appendChild(sublist);
+      } else {
+        const statValue = document.createElement("span");
+        statValue.className = "stats-value";
+        statValue.textContent = formatValue(
+          typeof value === "object" && value !== null ? JSON.stringify(value) : value
+        );
+        item.appendChild(statValue);
+      }
+
+      return item;
+    }
+
+    function renderStats(container, stats) {
+      container.replaceChildren();
+
+      const entries = Object.entries(stats || {});
+      if (entries.length === 0) {
+        container.appendChild(createEmptyState("No pool statistics returned."));
+        return;
+      }
+
+      const groupedEntries = new Map();
+      entries.forEach(([key, value]) => {
+        const groupName = STATISTIC_GROUPS[normalizeStatisticKey(key)] || "Additional statistics";
+        if (!groupedEntries.has(groupName)) {
+          groupedEntries.set(groupName, []);
+        }
+        groupedEntries.get(groupName).push([key, value]);
+      });
+
+      STATISTIC_GROUP_ORDER.forEach(groupName => {
+        const groupEntries = groupedEntries.get(groupName);
+        if (!groupEntries || groupEntries.length === 0) {
+          return;
+        }
+
+        const section = document.createElement("li");
+        section.className = "stats-category";
+
+        const heading = document.createElement("h4");
+        heading.className = "stats-category-heading";
+        heading.textContent = groupName;
+        section.appendChild(heading);
+
+        const groupList = document.createElement("ul");
+        groupList.className = "stats-category-list";
+        groupEntries.forEach(([key, value]) => {
+          groupList.appendChild(createStatisticItem(key, value));
+        });
+        section.appendChild(groupList);
+        container.appendChild(section);
+      });
+    }
+
+    function createEmptyState(message) {
+      const node = document.createElement("div");
+      node.className = "empty";
+      node.textContent = message;
+      return node;
+    }
+
+    async function fetchJson(url) {
+      const response = await fetch(url, {
+        headers: {
+          Authorization: AUTH_HEADER,
+          Accept: "application/json"
+        }
+      });
+
+      if (!response.ok) {
+        throw new Error(`${response.status} ${response.statusText}`);
+      }
+
+      return response.json();
+    }
+
+    function renderStatus(status) {
+      const valid = Number(status.valid_pools_count || 0);
+      const invalid = Number(status.invalid_pools_count || 0);
+      const health = invalid === 0 && valid > 0 ? "Healthy" : invalid > 0 ? "Degraded" : "Unknown";
+      const tone = invalid === 0 && valid > 0 ? "good" : invalid > 0 ? "bad" : "warn";
+
+      setMetric(elements.healthMetric, health, tone);
+      setMetric(elements.validPoolsMetric, formatValue(valid), valid > 0 ? "good" : "warn");
+
+      renderKvGrid(elements.statusSummary, [
+        ["Valid Pools", valid],
+        ["Invalid Pools", invalid],
+        ["Health", health]
+      ]);
+      renderLinks(elements.statusLinks, status.links);
+      elements.statusRaw.textContent = JSON.stringify(status, null, 2);
+    }
+
+    function renderCache(cache) {
+      const items = Array.isArray(cache.items) ? cache.items : [];
+      const firstPool = items[0] || {};
+
+      setMetric(elements.borrowedMetric, formatValue(firstPool.borrowedConnectionsCount ?? 0), "warn");
+      setMetric(elements.availableMetric, formatValue(firstPool.availableConnectionsCount ?? 0), "good");
+
+      renderKvGrid(elements.cacheSummary, [
+        ["Pool Entries", items.length],
+        ["Pool ID", firstPool.id || "n/a"],
+        ["Created", firstPool.created || "n/a"],
+        ["Validity", firstPool.validity || "n/a"]
+      ]);
+      renderCacheItems(elements.cacheItems, items);
+      elements.cacheRaw.textContent = JSON.stringify(cache, null, 2);
+    }
+
+    function renderDetail(detail) {
+      renderKvGrid(elements.detailSummary, [
+        ["Pool ID", detail.id],
+        ["Lifecycle", detail.lifecycleState],
+        ["Validity", detail.validity],
+        ["Created", detail.created],
+        ["Borrowed", detail.borrowedConnectionsCount],
+        ["Available", detail.availableConnectionsCount]
+      ]);
+      renderStats(elements.detailStats, detail.statistics);
+      elements.detailRaw.textContent = JSON.stringify(detail, null, 2);
+    }
+
+    function updateStatusLine(message, isError = false) {
+      elements.statusLine.textContent = message;
+      elements.statusLine.classList.toggle("error", isError);
+    }
+
+    async function refreshDashboard() {
+      elements.refreshButton.disabled = true;
+      updateStatusLine("Refreshing dashboard data...");
+
+      try {
+        const [status, cache, detail] = await Promise.all([
+          fetchJson(ENDPOINTS.status),
+          fetchJson(ENDPOINTS.cache),
+          fetchJson(ENDPOINTS.detail)
+        ]);
+
+        renderStatus(status);
+        renderCache(cache);
+        renderDetail(detail);
+
+        updateStatusLine(`Last updated: ${new Date().toLocaleString()}`);
+      } catch (error) {
+        updateStatusLine(
+          `Refresh failed: ${error.message}. If the page is opened as a local file, the browser may block cross-origin requests unless ORDS allows CORS.`,
+          true
+        );
+      } finally {
+        elements.refreshButton.disabled = false;
+      }
+    }
+
+    function applyRefreshInterval() {
+      if (state.timerId) {
+        window.clearInterval(state.timerId);
+      }
+
+      const interval = Number(elements.refreshInterval.value);
+      if (interval > 0) {
+        state.timerId = window.setInterval(refreshDashboard, interval);
+      } else {
+        state.timerId = null;
+      }
+    }
+
+    document.querySelectorAll(".raw-json-trigger").forEach((button) => {
+      button.addEventListener("click", () => {
+        const source = document.getElementById(button.dataset.rawTarget);
+        elements.rawJsonTitle.textContent = button.dataset.rawTitle || "Raw JSON";
+        elements.rawJsonModalContent.textContent = source?.textContent || "No raw JSON available yet.";
+        elements.rawJsonModal.showModal();
+      });
+    });
+
+    elements.rawJsonClose.addEventListener("click", () => {
+      elements.rawJsonModal.close();
+    });
+
+    elements.rawJsonModal.addEventListener("click", (event) => {
+      const bounds = elements.rawJsonModal.getBoundingClientRect();
+      const clickedOutside =
+        event.clientX < bounds.left ||
+        event.clientX > bounds.right ||
+        event.clientY < bounds.top ||
+        event.clientY > bounds.bottom;
+
+      if (clickedOutside) {
+        elements.rawJsonModal.close();
+      }
+    });
+
+    elements.openapiDownload.href = ENDPOINTS.openapi;
+    elements.openapiDownload.addEventListener("click", async (event) => {
+      event.preventDefault();
+      if (elements.openapiDownload.getAttribute("aria-busy") === "true") {
+        return;
+      }
+
+      elements.openapiDownload.setAttribute("aria-busy", "true");
+      try {
+        const response = await fetch(ENDPOINTS.openapi, {
+          headers: {
+            Authorization: AUTH_HEADER,
+            Accept: "application/json"
+          }
+        });
+        if (!response.ok) {
+          throw new Error(`${response.status} ${response.statusText}`);
+        }
+
+        const blobUrl = URL.createObjectURL(await response.blob());
+        const download = document.createElement("a");
+        download.href = blobUrl;
+        download.download = "ords-instance-api-openapi.json";
+        document.body.appendChild(download);
+        download.click();
+        download.remove();
+        window.setTimeout(() => URL.revokeObjectURL(blobUrl), 1000);
+        updateStatusLine("OpenAPI specification downloaded.");
+      } catch (error) {
+        updateStatusLine(`OpenAPI download failed: ${error.message}`, true);
+      } finally {
+        elements.openapiDownload.removeAttribute("aria-busy");
+      }
+    });
+
+    elements.refreshButton.addEventListener("click", refreshDashboard);
+    elements.refreshInterval.addEventListener("change", applyRefreshInterval);
+
+    applyRefreshInterval();
+    refreshDashboard();
+  </script>
+</body>
+</html>
