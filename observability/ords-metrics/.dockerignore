@@ -1,0 +1,7 @@
+.oci/
+ords-metrics.conf
+.env
+.env.*
+.git/
+logs/
+*.log

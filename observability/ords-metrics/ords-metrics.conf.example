@@ -1,0 +1,10 @@
+# Values consumed by the project's run-ords-metrics wrapper.
+logdir=/var/log/ords/access
+namespace=dbtools_ords
+compartment=
+resource=ords
+time=true
+jmx=jvm,os,thread,ucp
+pidfile=
+host=
+profile=DEFAULT

@@ -1,0 +1,67 @@
+services:
+  db:
+    image: container-registry.oracle.com/database/free:latest
+    environment:
+      ORACLE_PWD: ${ORACLE_PWD:?Set ORACLE_PWD in .env}
+      ORACLE_CHARACTERSET: AL32UTF8
+    ports:
+      - "127.0.0.1:${DB_PORT:-1521}:1521"
+    volumes:
+      - db-data:/opt/oracle/oradata
+      
+  ords:
+    image: ords-with-oci-cli:local
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        OCI_CLI_VERSION: ${OCI_CLI_VERSION:-3.68.1}
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DBHOST: db
+      DBPORT: 1521
+      DBSERVICENAME: ${ORACLE_PDB:-FREEPDB1}
+      ORACLE_PWD: ${ORACLE_PWD:?Set ORACLE_PWD in .env}
+      ORACLE_USER_PWD: ${ORACLE_USER_PWD:?Set ORACLE_USER_PWD in .env}
+      DEBUG: "FALSE"
+      JDK_JAVA_OPTIONS: "-Djava.util.logging.config.file=/etc/ords/logging.properties"
+      ORDS_CONFIG: /etc/ords/config
+      OCI_CLI_CONFIG_FILE: /home/oracle/.oci/config
+    ports:
+      - "127.0.0.1:${ORDS_PORT:-8080}:8080"
+    volumes:
+      - ./logging.properties:/etc/ords/logging.properties:ro
+      - ${ORDS_LOG_DIR:-./logs}:/var/log/ords
+      - ords-config:/etc/ords/config
+      - ${OCI_CONFIG_DIR:-./.oci}:/home/oracle/.oci
+      - ords-runtime-tmp:/tmp
+    healthcheck:
+      test: ["CMD-SHELL", "curl --fail --silent http://127.0.0.1:8080/ords/_/public-properties/ >/dev/null"]
+      interval: 15s
+      timeout: 10s
+      retries: 20
+      start_period: 3m
+
+  ords-metrics:
+    image: ords-with-oci-cli:local
+    profiles: ["oci-metrics"]
+    depends_on:
+      ords:
+        condition: service_healthy
+    pid: "service:ords"
+    entrypoint: ["/usr/local/bin/run-ords-metrics"]
+    environment:
+      ORDS_METRICS_CONFIG_FILE: /etc/ords-metrics.conf
+      OCI_CLI_CONFIG_FILE: /home/oracle/.oci/config
+    volumes:
+      - ${ORDS_LOG_DIR:-./logs}:/var/log/ords:ro
+      - ${OCI_CONFIG_DIR:-./.oci}:/home/oracle/.oci:ro
+      - ${ORDS_METRICS_CONFIG:-./ords-metrics.conf}:/etc/ords-metrics.conf:ro
+      - ords-runtime-tmp:/tmp
+
+volumes:
+  db-data:
+  ords-config:
+  ords-runtime-tmp:

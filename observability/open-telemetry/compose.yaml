@@ -79,6 +79,8 @@ services:
     volumes:
       # ORDS stores its generated configuration between container restarts.
       - ords-config:/etc/ords/config
+      # Keep the JMX exporter rules editable and read-only inside the container.
+      - ./ords/jmx-exporter.yaml:/opt/oracle/ords/jmx-exporter.yaml:ro
     healthcheck:
       # This built-in endpoint confirms ORDS is serving HTTP; it does not query the database.
       test: ["CMD-SHELL", "curl --fail --silent http://127.0.0.1:8080/ords/_/public-properties/ >/dev/null"]

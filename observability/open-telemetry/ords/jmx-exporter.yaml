@@ -1,0 +1,12 @@
+# Export the ORDS UCP management beans. JVM metrics remain sourced by the OpenTelemetry agent.
+excludeJvmMetrics: true
+includeObjectNames:
+  - "oracle.ucp.admin:*"
+rules:
+  - pattern: ".*"
+openTelemetry:
+  endpoint: http://grafana-lgtm:4318
+  protocol: http/protobuf
+  interval: 15
+  timeoutSeconds: 10
+  serviceName: ords-jmx
