@@ -1,12 +1,25 @@
-# Export the ORDS UCP management beans. JVM metrics remain sourced by the OpenTelemetry agent.
+# Export ORDS UCP connection-pool management beans. The OpenTelemetry Java agent
+# already collects JVM metrics, so this agent skips them to avoid duplicates.
 excludeJvmMetrics: true
+
+# The includeObjectNames filter is currently set...meaning, the JMX Exporter will only collect the 
+# filtered MBeans by default.
+# Use somthing like JConsole, on a running ORDS instance, to determine which ObjectName patterns you 
+# want to collect. Here is an example filter:
 includeObjectNames:
   - "oracle.ucp.admin:*"
+
+# Broadly match the attributes of the included beans for export.
 rules:
   - pattern: ".*"
+# Sends the collected metrics as OpenTelemetry Protocol (OTLP) over HTTP.
 openTelemetry:
+  # The OTLP HTTP endpoint for the Grafana LGTM service.
   endpoint: http://grafana-lgtm:4318
+  # Encode telemetry using OTLP's HTTP protobuf format.
   protocol: http/protobuf
+  # Collects and exports metrics every 15 seconds; allowing up to 10 seconds per export.
   interval: 15
   timeoutSeconds: 10
+  # Identifies this telemetry source as ords-jmx.
   serviceName: ords-jmx

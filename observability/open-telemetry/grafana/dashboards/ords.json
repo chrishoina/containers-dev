@@ -1,7 +1,7 @@
 {
   "uid": "ords-observability",
   "title": "ORDS observability",
-  "description": "Local OpenTelemetry metrics and runtime logs from the ORDS service. HTTP and JVM metrics can be populated by the included health-check route; UCP metrics need a database-backed ORDS request.",
+  "description": "Local OpenTelemetry metrics and runtime logs from the ORDS service.",
   "schemaVersion": 39,
   "version": 1,
   "tags": ["ORDS", "OpenTelemetry"],

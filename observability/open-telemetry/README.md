@@ -1,6 +1,6 @@
 # ORDS with OpenTelemetry and Grafana LGTM
 
-This is a local learning and proof-of-concept stack for seeing telemetry from Oracle REST Data Services (ORDS). Docker Compose starts Oracle AI Database Free, ORDS, and Grafana LGTM. The OpenTelemetry Java agent and Prometheus JMX Exporter run inside the ORDS Java process. OpenTelemetry supplies request telemetry; the JMX Exporter reads ORDS Universal Connection Pool (UCP) management beans and sends those metrics to the same Grafana LGTM backend.
+This is a local learning and proof-of-concept stack for seeing telemetry from Oracle REST Data Services (ORDS). Docker Compose starts Oracle AI Database Free, ORDS, and Grafana LGTM. The OpenTelemetry Java agent and Prometheus JMX Exporter run inside the ORDS Java process. OpenTelemetry supplies request telemetry; the JMX Exporter reads JMX MBeans from the ORDS JVM and sends metrics to the same Grafana LGTM backend. The current JMX configuration has no `includeObjectNames` filter, so the exporter includes all MBeans by default; you can inspect ORDS with JConsole and add a filter when you know which ObjectNames to collect.
 
 ## What you get
 
@@ -8,12 +8,14 @@ The stack collects three kinds of telemetry:
 
 - **Traces** show one request as a sequence of timed operations. Use them to see how long an ORDS HTTP request took and, when the request accesses the database, which database operations happened underneath it.
 - **Metrics** are measurements collected over time. The supplied dashboard includes HTTP request rate, p95 latency, JVM CPU and memory, and ORDS connection-pool metrics.
-- **JMX metrics** add UCP pool measurements from ORDS MBeans. They are exported every 15 seconds and labeled with the service name `ords-jmx`.
+- **JMX metrics** include measurements from MBeans in the ORDS JVM. The current configuration leaves `includeObjectNames` unset, so collection is not limited to UCP beans. Metrics are exported every 15 seconds and labeled with the service name `ords-jmx`.
 - **Logs** are individual runtime messages. ORDS uses Java Util Logging (JUL); the OpenTelemetry agent bridges those records into OpenTelemetry logs.
 
 Grafana is the browser interface. In this LGTM image, the bundled OpenTelemetry Collector receives OTLP data, Tempo stores traces, Prometheus stores metrics, and Loki stores logs. OTLP is the OpenTelemetry protocol used to send those signals. The dashboard is provisioned when Grafana starts, so you do not need to import it by hand.
 
 The dashboard is adapted from the ORDS observability example in [anders-swanson/oracle-database-code-samples](https://github.com/anders-swanson/oracle-database-code-samples/tree/main/oracledb-e2e-observability).
+
+The provider configuration in `grafana/dashboards.yaml` uses Grafana's [file-based dashboard provisioning format](https://grafana.com/docs/grafana/latest/administration/provisioning/#dashboards), where `apiVersion: 1` identifies Grafana's provisioning configuration format. It is Grafana-specific YAML, not a Kubernetes API manifest. The `options.path` points to the container directory where Compose mounts `./grafana/dashboards` read-only; Compose also mounts the provider configuration into Grafana's dashboards provisioning directory.
 
 ## Before you start
 
@@ -25,7 +27,7 @@ The dashboard is adapted from the ORDS observability example in [anders-swanson/
   ```
 
   Docker prompts for your registry username and password. It stores the login for Docker to use when it pulls the Oracle images.
-- The first ORDS image build downloads the pinned OpenTelemetry Java agent and JMX Exporter from GitHub Releases and verifies both SHA-256 checksums, so the build needs network access to GitHub.
+- The ORDS image build downloads Java agent artifacts from GitHub Releases, so the build needs network access to GitHub. The ORDS base image and OpenTelemetry Java agent currently use `latest`; JMX Exporter is pinned to version 1.7.0 and its SHA-256 is checked.
 - Oracle Database Free uses more memory than the other services. If Docker Desktop reports that a container exits or becomes unhealthy during database startup, make sure Docker has enough memory allocated; 8 GB is a practical starting point for this full local stack.
 
 ## Recommended container VM settings
@@ -57,7 +59,7 @@ docker compose up -d
 docker compose ps
 ```
 
-Compose builds a small custom ORDS image from `ords/Dockerfile`. The build downloads OpenTelemetry Java agent 2.33.1 and JMX Exporter 1.7.0, verifying each SHA-256 checksum. The image replaces the ORDS command with a wrapper that adds both agents only when ORDS starts `serve`; database connection checks and installation commands run without either agent. This avoids applying `JAVA_TOOL_OPTIONS` to every Java process launched during container setup.
+Compose builds a small custom ORDS image from `ords/Dockerfile`, using the ORDS `latest` base image. The Dockerfile requests the OpenTelemetry Java agent from GitHub's latest release and pins JMX Exporter to 1.7.0 with SHA-256 verification. The image replaces the ORDS command with a wrapper that adds both agents before `ords serve` starts; installation and database-check commands run without them. The wrapper then forwards the arguments to the original ORDS command with `exec`, so ORDS receives container signals directly. This avoids applying `JAVA_TOOL_OPTIONS` to every Java process launched during container setup.
 
 The first database startup and ORDS installation can take several minutes. ORDS starts after the database and Grafana LGTM report healthy. The ORDS health check requests the built-in public-properties endpoint; it does not create or require an application REST user. Wait until `db`, `grafana-lgtm`, and `ords` show `healthy` before sending requests. To follow startup messages, run:
 
@@ -112,8 +114,8 @@ The OpenTelemetry agent exports ORDS Java Util Logging records to Loki. In Grafa
 
 ## How the configuration fits together
 
-- `ords/serve-with-agent.sh` wraps the ORDS command and adds both Java agents only when the command is `serve`. Startup checks and installation do not load either agent.
-- `ords/jmx-exporter.yaml` limits collection to the `oracle.ucp.admin` MBeans, avoiding duplicate JVM metrics from the OpenTelemetry agent, and sends JMX metrics to LGTM over OTLP/HTTP. Compose mounts this config read-only; no remote JMX/RMI listener or host port is opened.
+- `ords/serve-with-agent.sh` adds the Java agents before ORDS starts `serve`; other CLI commands, including installation and database checks, run without them. It forwards the arguments to the original ORDS command with `exec` so the server receives signals directly.
+- `ords/jmx-exporter.yaml` leaves `includeObjectNames` unset, so JMX Exporter collects all MBeans by default. `excludeJvmMetrics` avoids duplicate JVM metrics, and the `.*` rule broadly matches bean attributes. Use JConsole to inspect a running ORDS JVM before adding verified ObjectName patterns to narrow collection. Compose mounts this config read-only and does not publish a remote JMX/RMI listener or host port.
 - `OTEL_SERVICE_NAME=ords` labels telemetry so you can find the ORDS service in Grafana.
 - `OTEL_*_EXPORTER=otlp` turns on exporting for traces, metrics, and logs.
 - `OTEL_EXPORTER_OTLP_ENDPOINT=http://grafana-lgtm:4318` points the OpenTelemetry agent to Grafana LGTM using the Compose service name. The JMX Exporter uses the same internal endpoint in `ords/jmx-exporter.yaml`; `localhost` inside the ORDS container would refer back to ORDS itself.
@@ -138,7 +140,7 @@ If one of these host ports is already in use, change its value in `.env` and run
 
 ## Stop or reset
 
-Stop and remove the containers while keeping the database, ORDS configuration, and Java agent volumes. The next `docker compose up -d` reuses them:
+Stop and remove the containers while keeping the database and ORDS configuration. The next `docker compose up -d` reuses them; both Java agents are packaged in the custom ORDS image, not stored in volumes:
 
 ```sh
 docker compose down
@@ -146,7 +148,7 @@ docker compose down
 
 ### Start with clean service data
 
-Use this when you want the stack to initialize from scratch, for example after changing the database setup or recovering from a bad volume state. This deletes the local database files and ORDS configuration, so any database data in this Compose project will be lost. Your `.env` file and downloaded container images are kept. Both checksum-verified Java agents are part of the custom ORDS image, so removing volumes does not remove them.
+Use this when you want the stack to initialize from scratch, for example after changing the database setup or recovering from a bad volume state. This deletes the local database files and ORDS configuration, so any database data in this Compose project will be lost. Your `.env` file and downloaded container images are kept. Both Java agents are part of the custom ORDS image, so removing volumes does not remove them.
 
 From the project directory, remove the containers, named volumes, and orphan containers, then start the stack again:
 
@@ -156,7 +158,7 @@ docker compose up -d
 docker compose ps
 ```
 
-The first startup initializes the database and installs ORDS, which can take several minutes. Compose reuses the custom ORDS image, including its verified Java agent, after a volume reset. To force a fresh image build and re-download the agent, run `docker compose build --no-cache ords` before starting the services. Follow startup logs if you want to see progress:
+The first startup initializes the database and installs ORDS, which can take several minutes. Compose reuses the custom ORDS image after a volume reset. To force a fresh image build and fetch the agent artifacts again, run `docker compose build --no-cache ords` before starting the services. Follow startup logs if you want to see progress:
 
 ```sh
 docker compose logs -f db ords grafana-lgtm
@@ -169,7 +171,7 @@ Press **Ctrl+C** to stop following logs; the services continue running. Grafana 
 - **A container is still starting:** the initial database initialization is slow. Check `docker compose ps` and `docker compose logs -f db ords grafana-lgtm`.
 - **Grafana opens but charts are empty:** send requests and wait for several metric export intervals. Use a time range that includes the requests.
 - **No traces in Tempo:** confirm ORDS is healthy, send the `curl` request above, then search Tempo for service `ords`. Check `docker compose logs ords grafana-lgtm` for agent or export errors. The first `docker compose up` builds the custom ORDS image; a failed download or checksum check appears in the build output.
-- **UCP panels or JMX metrics are empty:** the stack does not create or call a database-backed REST endpoint. Manually create and REST-enable a schema endpoint, then invoke it to generate database spans and UCP activity.
+- **UCP panels or JMX metrics are empty:** the stack does not create or call a database-backed REST endpoint. Manually create and REST-enable a schema endpoint, then invoke it to generate database spans and UCP activity. If you want to restrict JMX collection, inspect the running ORDS JVM with JConsole and add matching ObjectName patterns to `includeObjectNames`.
 - **The dashboard is missing:** the provisioning files are mounted into LGTM when the container starts. Check `docker compose logs grafana-lgtm`; after changing dashboard files, restart Grafana with `docker compose restart grafana-lgtm`.
 - **A port is already in use:** change the corresponding port in `.env`, then run `docker compose up -d`.
 - **Oracle image pull is denied:** verify that you accepted both image repository terms and completed `docker login container-registry.oracle.com`.

@@ -1,5 +1,8 @@
 # Grafana's file provider loads dashboard JSON from the mounted directory.
 # Compose mounts ./grafana/dashboards at this container path as read-only.
+# This follows Grafana's file-based dashboard provisioning format (apiVersion: 1),
+# which is Grafana-specific configuration, not a Kubernetes API manifest.
+# See https://grafana.com/docs/grafana/latest/administration/provisioning/#dashboards
 apiVersion: 1
 providers:
   - name: ORDS observability
